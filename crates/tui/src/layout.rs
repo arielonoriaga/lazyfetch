@@ -83,34 +83,7 @@ pub fn draw(f: &mut Frame, state: &AppState) -> DrawInfo {
     let status_text = match state.mode {
         Mode::Search => format!("/{}", state.search_buf),
         Mode::Command => format!(":{}", state.command_buf),
-        Mode::Insert => match state.insert_buf.as_ref() {
-            Some(b) => {
-                let mark_key = if b.field == InsertField::Key {
-                    ">"
-                } else {
-                    " "
-                };
-                let mark_val = if b.field == InsertField::Value {
-                    ">"
-                } else {
-                    " "
-                };
-                let preview = if b.secret {
-                    "*".repeat(b.value.len())
-                } else {
-                    b.value.clone()
-                };
-                format!(
-                    "[insert{}] {}key: {}    {}value: {}    (Tab next · Enter save · Esc cancel)",
-                    if b.secret { " secret" } else { "" },
-                    mark_key,
-                    b.key,
-                    mark_val,
-                    preview
-                )
-            }
-            None => "[insert]".into(),
-        },
+        Mode::Insert => "(insert popup — Tab swap · Enter save · Esc cancel)".into(),
         Mode::Normal => match state.focus {
             Focus::Env => {
                 "Env: j/k · a add · A add-sec · e edit · d del · m sec · r reveal · :env / :newenv"
@@ -147,6 +120,9 @@ pub fn draw(f: &mut Frame, state: &AppState) -> DrawInfo {
     let status = Paragraph::new(status_line);
     f.render_widget(status, outer[2]);
 
+    if state.mode == Mode::Insert && state.focus == Focus::Env {
+        draw_env_var_modal(f, state);
+    }
     if state.help_open {
         draw_help(f);
     }
@@ -197,6 +173,182 @@ fn compute_total_lines(state: &AppState) -> usize {
     let body = pretty_body(ct, &executed.response.body_bytes);
     let body = executed.secrets.redact(&body);
     body.lines().count()
+}
+
+fn draw_env_var_modal(f: &mut Frame, state: &AppState) {
+    use ratatui::widgets::Clear;
+    let Some(buf) = state.insert_buf.as_ref() else {
+        return;
+    };
+    let area = f.area();
+    let w = area.width.min(64);
+    let h = 9u16.min(area.height);
+    let x = area.x + (area.width.saturating_sub(w)) / 2;
+    let y = area.y + (area.height.saturating_sub(h)) / 3; // upper third feels nicer
+    let popup = Rect {
+        x,
+        y,
+        width: w,
+        height: h,
+    };
+
+    let title_text = match (buf.edit_idx, buf.secret) {
+        (Some(_), true) => " Edit secret variable ",
+        (Some(_), false) => " Edit variable ",
+        (None, true) => " New secret variable ",
+        (None, false) => " New variable ",
+    };
+    let env_name = state
+        .active_env_ref()
+        .map(|e| e.name.clone())
+        .unwrap_or_else(|| "default".into());
+    let title = Line::from(vec![
+        Span::styled(
+            title_text,
+            Style::default()
+                .fg(Color::Black)
+                .bg(if buf.secret { Color::Red } else { Color::Green })
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!(" → {} ", env_name),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Plain)
+        .border_style(
+            Style::default()
+                .fg(if buf.secret { Color::Red } else { Color::Green })
+                .add_modifier(Modifier::BOLD),
+        )
+        .title(title);
+    let inner = block.inner(popup);
+    f.render_widget(Clear, popup);
+    f.render_widget(block, popup);
+
+    // Two-row layout: Key + Value, plus a footer hint.
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+
+    let active_key = buf.field == InsertField::Key;
+    let active_val = buf.field == InsertField::Value;
+    let label_style = Style::default()
+        .fg(Color::Yellow)
+        .add_modifier(Modifier::BOLD);
+
+    let key_marker = if active_key { "▌" } else { " " };
+    let val_marker = if active_val { "▌" } else { " " };
+
+    let key_line = Line::from(vec![
+        Span::styled(key_marker.to_string(), label_style),
+        Span::styled(" Key   ", Style::default().fg(Color::Gray)),
+        Span::styled(
+            buf.key.clone(),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+        if active_key {
+            Span::styled(
+                "▏",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::SLOW_BLINK),
+            )
+        } else {
+            Span::raw("")
+        },
+    ]);
+
+    let value_display = if buf.secret {
+        "*".repeat(buf.value.len())
+    } else {
+        buf.value.clone()
+    };
+    let val_line = Line::from(vec![
+        Span::styled(val_marker.to_string(), label_style),
+        Span::styled(" Value ", Style::default().fg(Color::Gray)),
+        Span::styled(
+            value_display,
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+        if active_val {
+            Span::styled(
+                "▏",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::SLOW_BLINK),
+            )
+        } else {
+            Span::raw("")
+        },
+    ]);
+
+    let secret_hint = if buf.secret {
+        "secret · masked in logs / save / history"
+    } else {
+        "plain · visible in raw view"
+    };
+
+    let footer = Line::from(vec![
+        Span::styled(
+            " Tab ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" swap  ", Style::default().fg(Color::Gray)),
+        Span::styled(
+            " Enter ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" save  ", Style::default().fg(Color::Gray)),
+        Span::styled(
+            " Esc ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Red)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" cancel", Style::default().fg(Color::Gray)),
+    ]);
+
+    f.render_widget(Paragraph::new(key_line), rows[0]);
+    f.render_widget(Paragraph::new(val_line), rows[1]);
+    f.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            secret_hint,
+            Style::default()
+                .fg(if buf.secret {
+                    Color::Red
+                } else {
+                    Color::DarkGray
+                })
+                .add_modifier(Modifier::ITALIC),
+        ))),
+        rows[3],
+    );
+    f.render_widget(Paragraph::new(footer), rows[5]);
 }
 
 fn draw_help(f: &mut Frame) {
