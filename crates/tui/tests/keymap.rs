@@ -33,6 +33,8 @@ fn q_quits() {
 fn tab_cycles_focus() {
     let mut s = state();
     step(&mut s, ev(KeyCode::Tab));
+    assert_eq!(s.focus, Focus::Url);
+    step(&mut s, ev(KeyCode::Tab));
     assert_eq!(s.focus, Focus::Request);
     step(&mut s, ev(KeyCode::Tab));
     assert_eq!(s.focus, Focus::Response);
@@ -40,7 +42,7 @@ fn tab_cycles_focus() {
 
 #[test]
 fn arrows_move_spatially() {
-    // Layout: Collections | Request
+    // Layout: Collections | Request (under URL)
     //         Env         | Response
     let mut s = state();
     assert_eq!(s.focus, Focus::Collections);
@@ -137,6 +139,22 @@ fn env_delete_var() {
     let env = s.active_env_ref().unwrap();
     assert_eq!(env.vars.len(), 1);
     assert_eq!(env.vars[0].0, "Y");
+}
+
+#[test]
+fn url_bar_typing_appends_to_buf_and_enter_jumps_to_request() {
+    let mut s = state();
+    while s.focus != Focus::Url {
+        step(&mut s, ev(KeyCode::Tab));
+    }
+    for c in "https://x.test".chars() {
+        step(&mut s, key(c));
+    }
+    assert_eq!(s.url_buf, "https://x.test");
+    step(&mut s, ev(KeyCode::Backspace));
+    assert_eq!(s.url_buf, "https://x.tes");
+    step(&mut s, ev(KeyCode::Enter));
+    assert_eq!(s.focus, Focus::Request);
 }
 
 #[test]

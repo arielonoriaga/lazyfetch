@@ -24,6 +24,9 @@ pub enum Action {
     InsertCancel,
     ToggleHelp,
     CloseHelp,
+    UrlChar(char),
+    UrlBackspace,
+    UrlSubmit,
     NoOp,
 }
 
@@ -42,6 +45,21 @@ pub fn dispatch(state: &AppState, ev: KeyEvent) -> Action {
 }
 
 fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
+    // URL bar is a text input — chars go to the buffer, not to global keymap.
+    // Only navigation/control keys escape it.
+    if state.focus == Focus::Url {
+        return match (ev.code, ev.modifiers) {
+            (KeyCode::Char('c'), KeyModifiers::CONTROL) => Action::Quit,
+            (KeyCode::Tab, _) => Action::FocusNext,
+            (KeyCode::BackTab, _) => Action::FocusPrev,
+            (KeyCode::Left, _) => Action::FocusDir(Dir::Left),
+            (KeyCode::Right, _) => Action::FocusDir(Dir::Right),
+            (KeyCode::Up, _) => Action::FocusDir(Dir::Up),
+            (KeyCode::Down, _) => Action::FocusDir(Dir::Down),
+            (KeyCode::Esc, _) => Action::FocusDir(Dir::Down),
+            _ => dispatch_url(ev),
+        };
+    }
     match (ev.code, ev.modifiers) {
         (KeyCode::Char('c'), KeyModifiers::CONTROL) => Action::Quit,
         (KeyCode::Char('q'), KeyModifiers::NONE) => Action::Quit,
@@ -49,7 +67,6 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
         (KeyCode::BackTab, _) => Action::FocusPrev,
         (KeyCode::Char(':'), KeyModifiers::NONE) => Action::EnterCommand,
         (KeyCode::Char('?'), _) => Action::ToggleHelp,
-        // spatial pane movement (arrows + h/l, never j/k)
         (KeyCode::Left, _) | (KeyCode::Char('h'), KeyModifiers::NONE) => {
             Action::FocusDir(Dir::Left)
         }
@@ -58,8 +75,18 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
         }
         (KeyCode::Up, _) => Action::FocusDir(Dir::Up),
         (KeyCode::Down, _) => Action::FocusDir(Dir::Down),
-        // pane-local keys (j/k = list cursor within the pane)
         _ if state.focus == Focus::Env => dispatch_env(ev),
+        _ => Action::NoOp,
+    }
+}
+
+fn dispatch_url(ev: KeyEvent) -> Action {
+    match (ev.code, ev.modifiers) {
+        (KeyCode::Backspace, _) => Action::UrlBackspace,
+        (KeyCode::Enter, _) => Action::UrlSubmit,
+        (KeyCode::Char(c), KeyModifiers::NONE) | (KeyCode::Char(c), KeyModifiers::SHIFT) => {
+            Action::UrlChar(c)
+        }
         _ => Action::NoOp,
     }
 }
@@ -226,6 +253,19 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
         }
         Action::CloseHelp => {
             state.help_open = false;
+            EnvDirty::No
+        }
+        Action::UrlChar(c) => {
+            state.url_buf.push(c);
+            EnvDirty::No
+        }
+        Action::UrlBackspace => {
+            state.url_buf.pop();
+            EnvDirty::No
+        }
+        Action::UrlSubmit => {
+            state.toast = Some(format!("URL: {}", state.url_buf));
+            state.focus = Focus::Request;
             EnvDirty::No
         }
         Action::NoOp => EnvDirty::No,

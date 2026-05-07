@@ -24,13 +24,18 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         .split(body[0]);
     let right = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Percentage(50),
+            Constraint::Percentage(50),
+        ])
         .split(body[1]);
 
     pane(f, left[0], "Collections", Focus::Collections, state);
     pane(f, left[1], "Environment", Focus::Env, state);
-    pane(f, right[0], "Request", Focus::Request, state);
-    pane(f, right[1], "Response", Focus::Response, state);
+    render_url_bar(f, right[0], state);
+    pane(f, right[1], "Request", Focus::Request, state);
+    pane(f, right[2], "Response", Focus::Response, state);
 
     let toast = Paragraph::new(Line::from(state.toast.as_deref().unwrap_or(""))).style(
         Style::default()
@@ -72,6 +77,9 @@ pub fn draw(f: &mut Frame, state: &AppState) {
         Mode::Normal => match state.focus {
             Focus::Env => {
                 "Env: j/k · a add · A add-secret · m toggle-secret · d delete · :env <name>".into()
+            }
+            Focus::Url => {
+                "URL: type to edit · Backspace · Enter commit · arrows leave pane · ? help".into()
             }
             _ => ":  Tab cycle  ?  help  q quit".into(),
         },
@@ -135,6 +143,10 @@ fn draw_help(f: &mut Frame) {
         row("?", "toggle this help"),
         row(":", "command mode"),
         row("q  /  C-c", "quit"),
+        Line::from(""),
+        section("URL bar"),
+        row("type / Bksp", "edit URL inline"),
+        row("Enter", "commit · jump to Request"),
         Line::from(""),
         section("Env pane"),
         row("j / k", "move row cursor"),
@@ -229,7 +241,66 @@ fn pane(f: &mut Frame, area: Rect, title: &str, my: Focus, state: &AppState) {
                 "  S         save body / cURL",
             ],
         ),
+        Focus::Url => {} // rendered by render_url_bar above this pane()
     }
+}
+
+fn render_url_bar(f: &mut Frame, area: Rect, state: &AppState) {
+    let focused = state.focus == Focus::Url;
+    let border = if focused {
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" URL ")
+        .border_style(border);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let method_color = match state.method.as_str() {
+        "GET" => Color::Green,
+        "POST" => Color::Yellow,
+        "PUT" => Color::Cyan,
+        "PATCH" => Color::Magenta,
+        "DELETE" => Color::Red,
+        _ => Color::Gray,
+    };
+    let url_display = if state.url_buf.is_empty() && !focused {
+        Span::styled(
+            "(press Tab here, then type your URL — e.g. {{API_URL}}/users)",
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        )
+    } else {
+        Span::styled(state.url_buf.clone(), Style::default().fg(Color::White))
+    };
+    let cursor = if focused {
+        Span::styled(
+            "▏",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::SLOW_BLINK),
+        )
+    } else {
+        Span::raw("")
+    };
+    let line = Line::from(vec![
+        Span::styled(
+            format!(" {:<6} ", state.method.as_str()),
+            Style::default()
+                .fg(method_color)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" "),
+        url_display,
+        cursor,
+    ]);
+    f.render_widget(Paragraph::new(line), inner);
 }
 
 fn render_env(f: &mut Frame, area: Rect, state: &AppState, focused: bool) {

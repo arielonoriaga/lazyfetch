@@ -2,26 +2,26 @@
 source: crates/tui/tests/layout_snapshot.rs
 expression: s
 ---
-┌Collections───────────┐┌Request───────────────────────────────────────────────┐
-│No collections yet    ││No request open                                       │
-│                      ││                                                      │
-│Get started:          ││Pick one from Collections (Tab),                      │
-│  lazyfetch           ││or run from your shell:                               │
+┌Collections───────────┐┌ URL ─────────────────────────────────────────────────┐
+│No collections yet    ││ GET     (press Tab here, then type your URL — e.g. {{│
+│                      │└──────────────────────────────────────────────────────┘
+│Get started:          │┌Request───────────────────────────────────────────────┐
+│  lazyfetch           ││No request open                                       │
 │import-postman <file> ││                                                      │
-│  lazyfetch           ││  lazyfetch run <coll>/<request>                      │
-│import-postman <file> ││                                                      │
+│  lazyfetch           ││Pick one from Collections (Tab),                      │
+│import-postman <file> ││or run from your shell:                               │
 │--local               ││                                                      │
+│                      ││  lazyfetch run <coll>/<request>                      │
+│Files live in         ││                                                      │
+│  .lazyfetch/collectio││                                                      │
+└──────────────────────┘└──────────────────────────────────────────────────────┘
+┌Environment───────────┐┌Response──────────────────────────────────────────────┐
+│No environments yet   ││No response yet                                       │
 │                      ││                                                      │
-│Files live in         │└──────────────────────────────────────────────────────┘
-│  .lazyfetch/collectio│┌Response──────────────────────────────────────────────┐
-└──────────────────────┘│No response yet                                       │
-┌Environment───────────┐│                                                      │
-│No environments yet   ││Open a request, then press                            │
-│                      ││  s         send                                      │
-│Press 'a' to add a    ││  /  f      search · jq filter                        │
-│variable              ││  S         save body / cURL                          │
-│(creates a 'default'  ││                                                      │
-│env)                  ││                                                      │
+│Press 'a' to add a    ││Open a request, then press                            │
+│variable              ││  s         send                                      │
+│(creates a 'default'  ││  /  f      search · jq filter                        │
+│env)                  ││  S         save body / cURL                          │
 │                      ││                                                      │
 └──────────────────────┘└──────────────────────────────────────────────────────┘
                                                                                 

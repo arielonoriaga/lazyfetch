@@ -13,6 +13,7 @@ crossterm         = "0.28"
 anyhow            = { workspace = true }
 secrecy           = { workspace = true }
 ulid              = { workspace = true }
+http              = { workspace = true }
 
 [dev-dependencies]
 insta = "1"

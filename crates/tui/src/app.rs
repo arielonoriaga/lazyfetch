@@ -15,6 +15,7 @@ pub enum Mode {
 pub enum Focus {
     Collections,
     Env,
+    Url,
     Request,
     Response,
 }
@@ -22,7 +23,8 @@ pub enum Focus {
 impl Focus {
     pub fn next(self) -> Self {
         match self {
-            Focus::Collections => Focus::Request,
+            Focus::Collections => Focus::Url,
+            Focus::Url => Focus::Request,
             Focus::Request => Focus::Response,
             Focus::Response => Focus::Env,
             Focus::Env => Focus::Collections,
@@ -32,20 +34,25 @@ impl Focus {
     pub fn prev(self) -> Self {
         match self {
             Focus::Collections => Focus::Env,
-            Focus::Request => Focus::Collections,
+            Focus::Url => Focus::Collections,
+            Focus::Request => Focus::Url,
             Focus::Response => Focus::Request,
             Focus::Env => Focus::Response,
         }
     }
 
-    /// Spatial neighbour in the 2x2 grid.
-    /// Layout:  Collections | Request
+    /// Spatial neighbour.
+    /// Layout:  Collections | URL
+    ///          Collections | Request
     ///          Env         | Response
     pub fn neighbour(self, dir: Dir) -> Self {
         match (self, dir) {
             (Focus::Collections, Dir::Right) => Focus::Request,
             (Focus::Collections, Dir::Down) => Focus::Env,
+            (Focus::Url, Dir::Left) => Focus::Collections,
+            (Focus::Url, Dir::Down) => Focus::Request,
             (Focus::Request, Dir::Left) => Focus::Collections,
+            (Focus::Request, Dir::Up) => Focus::Url,
             (Focus::Request, Dir::Down) => Focus::Response,
             (Focus::Response, Dir::Left) => Focus::Env,
             (Focus::Response, Dir::Up) => Focus::Request,
@@ -101,6 +108,8 @@ pub struct AppState {
     pub command_buf: String,
     pub toast: Option<String>,
     pub help_open: bool,
+    pub url_buf: String,
+    pub method: http::Method,
     pub should_quit: bool,
 }
 
@@ -118,6 +127,8 @@ impl AppState {
             command_buf: String::new(),
             toast: None,
             help_open: false,
+            url_buf: String::new(),
+            method: http::Method::GET,
             should_quit: false,
         }
     }
