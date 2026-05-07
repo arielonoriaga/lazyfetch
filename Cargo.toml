@@ -4,7 +4,7 @@ members  = ["crates/core","crates/http","crates/storage","crates/auth","crates/i
 
 [workspace.package]
 edition = "2021"
-rust-version = "1.78"
+rust-version = "1.85"
 license = "MIT"
 authors = ["Ariel Onoriaga <onoriagaariel@gmail.com>"]
 
@@ -17,7 +17,7 @@ anyhow      = "1"
 tokio       = { version = "1", features = ["rt-multi-thread","macros","sync","time","fs"] }
 tracing     = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter","fmt"] }
-secrecy     = "0.8"
+secrecy     = { version = "0.8", features = ["serde"] }
 ulid        = { version = "1", features = ["serde"] }
 blake3      = "1"
 http        = "1"

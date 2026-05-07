@@ -6,3 +6,19 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+serde       = { workspace = true }
+thiserror   = { workspace = true }
+secrecy     = { workspace = true }
+ulid        = { workspace = true }
+chrono      = { workspace = true }
+http        = { workspace = true }
+blake3      = { workspace = true }
+async-trait = "0.1"
+anyhow      = { workspace = true }
+urlencoding = "2"
+
+[dev-dependencies]
+proptest   = "1"
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+tokio      = { workspace = true, features = ["macros", "rt"] }
