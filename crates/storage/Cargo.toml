@@ -6,3 +6,18 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+lazyfetch-core = { path = "../core" }
+serde       = { workspace = true }
+serde_yaml  = { workspace = true }
+serde_json  = { workspace = true }
+thiserror   = { workspace = true }
+secrecy     = { workspace = true, features = ["serde"] }
+ulid        = { workspace = true }
+chrono      = { workspace = true }
+blake3      = { workspace = true }
+fd-lock     = "4"
+tempfile    = "3"
+
+[dev-dependencies]
+http       = { workspace = true }
+serde_json = { workspace = true }
