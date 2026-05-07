@@ -117,6 +117,10 @@ pub struct AppState {
     pub last_error: Option<String>,
     pub inflight: Option<Receiver<Result<Executed, ExecError>>>,
     pub response_scroll: u16,
+    pub response_cursor: usize,
+    pub response_height: u16,
+    pub response_total_lines: usize,
+    pub pending_g: bool,
     pub search_buf: String,
     pub search_active: Option<String>,
     pub search_match_lines: Vec<usize>,
@@ -144,6 +148,10 @@ impl AppState {
             last_error: None,
             inflight: None,
             response_scroll: 0,
+            response_cursor: 0,
+            response_height: 1,
+            response_total_lines: 0,
+            pending_g: false,
             search_buf: String::new(),
             search_active: None,
             search_match_lines: vec![],
@@ -224,6 +232,25 @@ impl AppState {
             }
         }
         false
+    }
+
+    /// Move cursor to `target`, then adjust scroll so the cursor stays in the visible window.
+    pub fn move_cursor_to(&mut self, target: usize) {
+        let last = self.response_total_lines.saturating_sub(1);
+        self.response_cursor = target.min(last);
+        let h = self.response_height.max(1) as usize;
+        let scroll = self.response_scroll as usize;
+        if self.response_cursor < scroll {
+            self.response_scroll = self.response_cursor as u16;
+        } else if self.response_cursor >= scroll + h {
+            self.response_scroll = (self.response_cursor + 1 - h) as u16;
+        }
+    }
+
+    pub fn move_cursor_by(&mut self, delta: i32) {
+        let cur = self.response_cursor as i32 + delta;
+        let cur = cur.max(0) as usize;
+        self.move_cursor_to(cur);
     }
 
     pub fn env_var_at(&self, i: usize) -> Option<(&String, &str, bool)> {

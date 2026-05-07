@@ -30,9 +30,16 @@ pub enum Action {
     MethodNext,
     MethodPrev,
     SendRequest,
-    ResponseScroll(i32),
-    ResponseTop,
-    ResponseBottom,
+    CursorBy(i32),
+    CursorPageBy(i32),
+    CursorTop,
+    CursorBottom,
+    CursorParagraphNext,
+    CursorParagraphPrev,
+    CursorViewportTop,
+    CursorViewportMid,
+    CursorViewportBot,
+    PendingG,
     EnterSearch,
     SearchChar(char),
     SearchBackspace,
@@ -98,23 +105,42 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
         (KeyCode::Char(':'), KeyModifiers::NONE) => Action::EnterCommand,
         (KeyCode::Char('?'), _) => Action::ToggleHelp,
         (KeyCode::Char('s'), KeyModifiers::CONTROL) => Action::SendRequest,
-        // Response pane keys (j/k scroll, /, n, N)
+        // Response pane keys (vim navigation + search)
         (KeyCode::Char('j'), KeyModifiers::NONE) if state.focus == Focus::Response => {
-            Action::ResponseScroll(1)
+            Action::CursorBy(1)
         }
         (KeyCode::Char('k'), KeyModifiers::NONE) if state.focus == Focus::Response => {
-            Action::ResponseScroll(-1)
+            Action::CursorBy(-1)
         }
+        (KeyCode::Down, _) if state.focus == Focus::Response => Action::CursorBy(1),
+        (KeyCode::Up, _) if state.focus == Focus::Response => Action::CursorBy(-1),
         (KeyCode::Char('d'), KeyModifiers::CONTROL) if state.focus == Focus::Response => {
-            Action::ResponseScroll(10)
+            Action::CursorBy(10)
         }
         (KeyCode::Char('u'), KeyModifiers::CONTROL) if state.focus == Focus::Response => {
-            Action::ResponseScroll(-10)
+            Action::CursorBy(-10)
         }
+        (KeyCode::Char('f'), KeyModifiers::CONTROL) if state.focus == Focus::Response => {
+            Action::CursorPageBy(1)
+        }
+        (KeyCode::Char('b'), KeyModifiers::CONTROL) if state.focus == Focus::Response => {
+            Action::CursorPageBy(-1)
+        }
+        (KeyCode::PageDown, _) if state.focus == Focus::Response => Action::CursorPageBy(1),
+        (KeyCode::PageUp, _) if state.focus == Focus::Response => Action::CursorPageBy(-1),
         (KeyCode::Char('g'), KeyModifiers::NONE) if state.focus == Focus::Response => {
-            Action::ResponseTop
+            if state.pending_g {
+                Action::CursorTop
+            } else {
+                Action::PendingG
+            }
         }
-        (KeyCode::Char('G'), _) if state.focus == Focus::Response => Action::ResponseBottom,
+        (KeyCode::Char('G'), _) if state.focus == Focus::Response => Action::CursorBottom,
+        (KeyCode::Char('{'), _) if state.focus == Focus::Response => Action::CursorParagraphPrev,
+        (KeyCode::Char('}'), _) if state.focus == Focus::Response => Action::CursorParagraphNext,
+        (KeyCode::Char('H'), _) if state.focus == Focus::Response => Action::CursorViewportTop,
+        (KeyCode::Char('M'), _) if state.focus == Focus::Response => Action::CursorViewportMid,
+        (KeyCode::Char('L'), _) if state.focus == Focus::Response => Action::CursorViewportBot,
         (KeyCode::Char('/'), _) if state.focus == Focus::Response => Action::EnterSearch,
         (KeyCode::Char('n'), KeyModifiers::NONE) if state.focus == Focus::Response => {
             Action::SearchNext
@@ -337,20 +363,101 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
             // Sentinel — the event loop owns the tokio Handle and dispatches.
             EnvDirty::No
         }
-        Action::ResponseScroll(delta) => {
-            if delta < 0 {
-                state.response_scroll = state.response_scroll.saturating_sub((-delta) as u16);
-            } else {
-                state.response_scroll = state.response_scroll.saturating_add(delta as u16);
+        Action::CursorBy(delta) => {
+            state.move_cursor_by(delta);
+            state.pending_g = false;
+            EnvDirty::No
+        }
+        Action::CursorPageBy(pages) => {
+            let h = state.response_height.max(1) as i32;
+            state.move_cursor_by(pages * h);
+            state.pending_g = false;
+            EnvDirty::No
+        }
+        Action::CursorTop => {
+            state.move_cursor_to(0);
+            state.pending_g = false;
+            EnvDirty::No
+        }
+        Action::CursorBottom => {
+            let last = state.response_total_lines.saturating_sub(1);
+            state.move_cursor_to(last);
+            state.pending_g = false;
+            EnvDirty::No
+        }
+        Action::PendingG => {
+            state.pending_g = true;
+            EnvDirty::No
+        }
+        Action::CursorParagraphNext => {
+            state.pending_g = false;
+            // Layout owns line content; we approximate via search index of blank lines
+            // recomputed at search-submit and stored in `search_match_lines`. For paragraph
+            // motion we re-scan body lines lazily via the cached pretty body in last_response.
+            if let Some(executed) = &state.last_response {
+                let ct = executed
+                    .response
+                    .headers
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+                    .map(|(_, v)| v.as_str())
+                    .unwrap_or("");
+                let body = pretty_body_for_search(ct, &executed.response.body_bytes);
+                let body = executed.secrets.redact(&body);
+                let cur = state.response_cursor;
+                let target = body
+                    .lines()
+                    .enumerate()
+                    .skip(cur + 1)
+                    .find(|(_, l)| l.trim().is_empty())
+                    .map(|(i, _)| i)
+                    .unwrap_or_else(|| body.lines().count().saturating_sub(1));
+                state.move_cursor_to(target);
             }
             EnvDirty::No
         }
-        Action::ResponseTop => {
-            state.response_scroll = 0;
+        Action::CursorParagraphPrev => {
+            state.pending_g = false;
+            if let Some(executed) = &state.last_response {
+                let ct = executed
+                    .response
+                    .headers
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+                    .map(|(_, v)| v.as_str())
+                    .unwrap_or("");
+                let body = pretty_body_for_search(ct, &executed.response.body_bytes);
+                let body = executed.secrets.redact(&body);
+                let cur = state.response_cursor;
+                let collected: Vec<(usize, &str)> = body.lines().enumerate().take(cur).collect();
+                let target = collected
+                    .into_iter()
+                    .rev()
+                    .find(|(_, l)| l.trim().is_empty())
+                    .map(|(i, _)| i)
+                    .unwrap_or(0);
+                state.move_cursor_to(target);
+            }
             EnvDirty::No
         }
-        Action::ResponseBottom => {
-            state.response_scroll = u16::MAX;
+        Action::CursorViewportTop => {
+            state.pending_g = false;
+            let target = state.response_scroll as usize;
+            state.move_cursor_to(target);
+            EnvDirty::No
+        }
+        Action::CursorViewportMid => {
+            state.pending_g = false;
+            let h = state.response_height.max(1) as usize;
+            let target = state.response_scroll as usize + h / 2;
+            state.move_cursor_to(target);
+            EnvDirty::No
+        }
+        Action::CursorViewportBot => {
+            state.pending_g = false;
+            let h = state.response_height.max(1) as usize;
+            let target = state.response_scroll as usize + h.saturating_sub(1);
+            state.move_cursor_to(target);
             EnvDirty::No
         }
         Action::EnterSearch => {
@@ -402,7 +509,7 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
                         }
                     }
                     if let Some(&first) = state.search_match_lines.first() {
-                        state.response_scroll = first as u16;
+                        state.move_cursor_to(first);
                     }
                 }
                 state.search_active = Some(needle);
@@ -414,7 +521,7 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
                 state.search_match_idx =
                     (state.search_match_idx + 1) % state.search_match_lines.len();
                 let target = state.search_match_lines[state.search_match_idx];
-                state.response_scroll = target as u16;
+                state.move_cursor_to(target);
             }
             EnvDirty::No
         }
@@ -423,7 +530,7 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
                 let n = state.search_match_lines.len();
                 state.search_match_idx = (state.search_match_idx + n - 1) % n;
                 let target = state.search_match_lines[state.search_match_idx];
-                state.response_scroll = target as u16;
+                state.move_cursor_to(target);
             }
             EnvDirty::No
         }

@@ -6,7 +6,14 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use ratatui::Frame;
 
-pub fn draw(f: &mut Frame, state: &AppState) {
+/// Result of a draw pass — geometry the event loop needs to feed back into AppState.
+#[derive(Default, Debug, Clone, Copy)]
+pub struct DrawInfo {
+    pub response_height: u16,
+    pub response_total_lines: usize,
+}
+
+pub fn draw(f: &mut Frame, state: &AppState) -> DrawInfo {
     let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -36,7 +43,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     pane(f, left[1], "Environment", Focus::Env, state);
     render_url_bar(f, right[0], state);
     pane(f, right[1], "Request", Focus::Request, state);
-    pane(f, right[2], "Response", Focus::Response, state);
+    let resp_info = pane_response(f, right[2], state);
 
     let toast = Paragraph::new(Line::from(state.toast.as_deref().unwrap_or(""))).style(
         Style::default()
@@ -110,6 +117,48 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     if state.help_open {
         draw_help(f);
     }
+
+    DrawInfo {
+        response_height: resp_info.0,
+        response_total_lines: resp_info.1,
+    }
+}
+
+fn pane_response(f: &mut Frame, area: Rect, state: &AppState) -> (u16, usize) {
+    let focused = state.focus == Focus::Response;
+    let border_style = if focused {
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title("Response")
+        .border_style(border_style);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    render_response_inner(f, inner, state);
+    let body_height = inner.height.saturating_sub(2);
+    let total = compute_total_lines(state);
+    (body_height, total)
+}
+
+fn compute_total_lines(state: &AppState) -> usize {
+    let Some(executed) = &state.last_response else {
+        return 0;
+    };
+    let ct = executed
+        .response
+        .headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+        .map(|(_, v)| v.as_str())
+        .unwrap_or("");
+    let body = pretty_body(ct, &executed.response.body_bytes);
+    let body = executed.secrets.redact(&body);
+    body.lines().count()
 }
 
 fn draw_help(f: &mut Frame) {
@@ -263,17 +312,13 @@ fn pane(f: &mut Frame, area: Rect, title: &str, my: Focus, state: &AppState) {
                 "  lazyfetch run <coll>/<request>",
             ],
         ),
-        Focus::Response => render_response(f, inner, state),
-        Focus::Url => {} // rendered by render_url_bar above this pane()
+        Focus::Response => {} // handled by pane_response
+        Focus::Url => {}      // rendered by render_url_bar above this pane()
     }
 }
 
-fn render_response(f: &mut Frame, area: Rect, state: &AppState) {
-    render_response_inner(f, area, state, true);
-}
-
 #[allow(clippy::too_many_lines)]
-fn render_response_inner(f: &mut Frame, area: Rect, state: &AppState, _focused: bool) {
+fn render_response_inner(f: &mut Frame, area: Rect, state: &AppState) {
     if state.inflight.is_some() {
         empty(f, area, "Sending…", &["press Ctrl-c to cancel"]);
         return;
@@ -354,18 +399,10 @@ fn render_response_inner(f: &mut Frame, area: Rect, state: &AppState, _focused: 
     };
 
     // Search highlight (if active)
-    let (highlighted, _hits) = match state.search_active.as_deref() {
+    let (mut highlighted, _hits) = match state.search_active.as_deref() {
         Some(n) if !n.is_empty() => resp_render::apply_search_highlight(body_lines.clone(), n),
         _ => (body_lines, vec![]),
     };
-
-    // Stash matches into state via a side-channel: layout is &state only.
-    // We solve this by updating matches in the render lifecycle through the event loop;
-    // instead, recompute here and read from a simple cached method on AppState by passing
-    // matches through `state.search_match_lines` won't work since &state is shared.
-    // → Pragmatic: skip caching; n/N uses search_match_lines that was populated at submit time
-    //   if you searched again. We populate by scanning the rendered text on each submit instead.
-    // For now, leave as best-effort. (See keymap::Action::SearchSubmit.)
 
     let total = highlighted.len() as u16;
     let body_height = area.height.saturating_sub(2);
@@ -373,6 +410,24 @@ fn render_response_inner(f: &mut Frame, area: Rect, state: &AppState, _focused: 
     let scroll = state.response_scroll.min(max_scroll);
     let start = scroll as usize;
     let end = (start + body_height as usize).min(highlighted.len());
+
+    // Mark cursor line with reverse-video left margin.
+    let cursor = state.response_cursor;
+    if cursor < highlighted.len() {
+        let marker = Span::styled(
+            "▌ ",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        );
+        highlighted[cursor].insert(0, marker);
+    }
+    // Pad non-cursor lines with two spaces so columns align.
+    for (i, line) in highlighted.iter_mut().enumerate() {
+        if i != cursor {
+            line.insert(0, Span::raw("  "));
+        }
+    }
 
     let mut lines: Vec<Line> = header;
     for spans in &highlighted[start..end] {

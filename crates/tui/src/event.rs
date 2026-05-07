@@ -13,7 +13,12 @@ pub fn run(mut state: AppState, rt: Handle) -> anyhow::Result<()> {
     load_from_disk(&mut state)?;
     let mut guard = TerminalGuard::new()?;
     while !state.should_quit {
-        guard.term.draw(|f| draw(f, &state))?;
+        let mut info = crate::layout::DrawInfo::default();
+        guard.term.draw(|f| {
+            info = draw(f, &state);
+        })?;
+        state.response_height = info.response_height;
+        state.response_total_lines = info.response_total_lines;
 
         // Poll inflight result.
         if let Some(rx) = state.inflight.as_ref() {
