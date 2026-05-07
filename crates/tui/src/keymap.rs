@@ -82,6 +82,7 @@ fn dispatch_search(ev: KeyEvent) -> Action {
         (KeyCode::Esc, _) => Action::SearchCancel,
         (KeyCode::Enter, _) => Action::SearchSubmit,
         (KeyCode::Backspace, _) => Action::SearchBackspace,
+        (KeyCode::F(5), _) => Action::SendRequest,
         (KeyCode::Char(c), KeyModifiers::NONE) | (KeyCode::Char(c), KeyModifiers::SHIFT) => {
             Action::SearchChar(c)
         }
@@ -96,6 +97,7 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
         return match (ev.code, ev.modifiers) {
             (KeyCode::Char('c'), KeyModifiers::CONTROL) => Action::Quit,
             (KeyCode::Char('s'), KeyModifiers::CONTROL) => Action::SendRequest,
+            (KeyCode::F(5), _) => Action::SendRequest,
             (KeyCode::Enter, _) => Action::SendRequest,
             (KeyCode::Tab, _) => Action::FocusNext,
             (KeyCode::BackTab, _) => Action::FocusPrev,
@@ -125,6 +127,7 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
         }
         (KeyCode::Char('5'), KeyModifiers::NONE) => Action::FocusJump(Focus::Env),
         (KeyCode::Char('s'), KeyModifiers::CONTROL) => Action::SendRequest,
+        (KeyCode::F(5), _) => Action::SendRequest,
         // Response pane keys (vim navigation + search)
         (KeyCode::Char('j'), KeyModifiers::NONE) if state.focus == Focus::Response => {
             Action::CursorBy(1)
@@ -237,6 +240,7 @@ fn dispatch_command(ev: KeyEvent) -> Action {
         (KeyCode::Esc, _) => Action::CommandCancel,
         (KeyCode::Enter, _) => Action::CommandSubmit,
         (KeyCode::Backspace, _) => Action::CommandBackspace,
+        (KeyCode::F(5), _) => Action::SendRequest,
         (KeyCode::Char(c), KeyModifiers::NONE) | (KeyCode::Char(c), KeyModifiers::SHIFT) => {
             Action::CommandChar(c)
         }
@@ -250,6 +254,7 @@ fn dispatch_insert(ev: KeyEvent) -> Action {
         (KeyCode::Enter, _) => Action::InsertSubmit,
         (KeyCode::Tab, _) => Action::InsertNextField,
         (KeyCode::Backspace, _) => Action::InsertBackspace,
+        (KeyCode::F(5), _) => Action::SendRequest,
         (KeyCode::Char(c), KeyModifiers::NONE) | (KeyCode::Char(c), KeyModifiers::SHIFT) => {
             Action::InsertChar(c)
         }
