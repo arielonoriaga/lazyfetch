@@ -140,6 +140,7 @@ pub struct AppState {
     pub last_layout: crate::layout::DrawInfo,
     pub revealed_secrets: std::collections::HashSet<(ulid::Ulid, usize)>,
     pub save_buf: String,
+    pub url_suggest_idx: usize,
     pub pending_g: bool,
     pub visual_anchor: Option<(usize, usize)>,
     pub search_buf: String,
@@ -178,6 +179,7 @@ impl AppState {
             last_layout: crate::layout::DrawInfo::default(),
             revealed_secrets: std::collections::HashSet::new(),
             save_buf: String::new(),
+            url_suggest_idx: 0,
             pending_g: false,
             visual_anchor: None,
             search_buf: String::new(),
@@ -254,6 +256,58 @@ impl AppState {
         self.active_env_ref()
             .map(|e| self.revealed_secrets.contains(&(e.id, idx)))
             .unwrap_or(false)
+    }
+
+    /// Detect if the URL buffer is currently inside a `{{...` token.
+    /// Returns the partial prefix typed after `{{` (could be empty).
+    pub fn url_var_prefix(&self) -> Option<String> {
+        let s = &self.url_buf;
+        // Find the rightmost `{{` that has not yet been closed.
+        let open = s.rfind("{{")?;
+        let after = &s[open + 2..];
+        if after.contains("}}") {
+            return None;
+        }
+        // Bail out if the partial contains whitespace — likely not a var name anymore.
+        if after.chars().any(|c| c.is_whitespace()) {
+            return None;
+        }
+        Some(after.to_string())
+    }
+
+    /// Variable names matching the current URL prefix, sorted alphabetically.
+    pub fn url_var_suggestions(&self) -> Vec<String> {
+        let Some(prefix) = self.url_var_prefix() else {
+            return vec![];
+        };
+        let lower = prefix.to_lowercase();
+        let mut names: Vec<String> = self
+            .active_env_ref()
+            .into_iter()
+            .flat_map(|e| e.vars.iter().map(|(k, _)| k.clone()))
+            .chain(
+                self.collections
+                    .iter()
+                    .flat_map(|c| c.vars.iter().map(|kv| kv.key.clone())),
+            )
+            .filter(|n| n.to_lowercase().starts_with(&lower))
+            .collect();
+        names.sort();
+        names.dedup();
+        names
+    }
+
+    /// Replace the active `{{<prefix>` with `{{<chosen>}}` and reset the suggestion cursor.
+    pub fn url_complete_var(&mut self, chosen: &str) {
+        let Some(prefix) = self.url_var_prefix() else {
+            return;
+        };
+        let trim_len = prefix.len();
+        let new_len = self.url_buf.len() - trim_len;
+        self.url_buf.truncate(new_len);
+        self.url_buf.push_str(chosen);
+        self.url_buf.push_str("}}");
+        self.url_suggest_idx = 0;
     }
 
     pub fn create_env(&mut self, name: &str) -> bool {

@@ -30,6 +30,10 @@ pub enum Action {
     UrlChar(char),
     UrlBackspace,
     UrlSubmit,
+    UrlSuggestNext,
+    UrlSuggestPrev,
+    UrlSuggestAccept,
+    UrlSuggestDismiss,
     MethodNext,
     MethodPrev,
     SendRequest,
@@ -114,11 +118,18 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
     // URL bar is a text input — chars go to the buffer, not to global keymap.
     // Only navigation/control keys escape it.
     if state.focus == Focus::Url {
+        // If a {{var}} suggestion is active, intercept navigation/select keys.
+        let suggestions_active = !state.url_var_suggestions().is_empty();
         return match (ev.code, ev.modifiers) {
             (KeyCode::Char('c'), KeyModifiers::CONTROL) => Action::Quit,
             (KeyCode::Char('s'), KeyModifiers::CONTROL) => Action::SendRequest,
             (KeyCode::Char('w'), KeyModifiers::CONTROL) => Action::EnterSaveAs,
             (KeyCode::F(5), _) => Action::SendRequest,
+            (KeyCode::Enter, _) if suggestions_active => Action::UrlSuggestAccept,
+            (KeyCode::Tab, _) if suggestions_active => Action::UrlSuggestAccept,
+            (KeyCode::Down, _) if suggestions_active => Action::UrlSuggestNext,
+            (KeyCode::Up, _) if suggestions_active => Action::UrlSuggestPrev,
+            (KeyCode::Esc, _) if suggestions_active => Action::UrlSuggestDismiss,
             (KeyCode::Enter, _) => Action::SendRequest,
             (KeyCode::Tab, _) => Action::FocusNext,
             (KeyCode::BackTab, _) => Action::FocusPrev,
@@ -444,10 +455,39 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
         }
         Action::UrlChar(c) => {
             state.url_buf.push(c);
+            state.url_suggest_idx = 0;
             EnvDirty::No
         }
         Action::UrlBackspace => {
             state.url_buf.pop();
+            state.url_suggest_idx = 0;
+            EnvDirty::No
+        }
+        Action::UrlSuggestNext => {
+            let n = state.url_var_suggestions().len();
+            if n > 0 {
+                state.url_suggest_idx = (state.url_suggest_idx + 1) % n;
+            }
+            EnvDirty::No
+        }
+        Action::UrlSuggestPrev => {
+            let n = state.url_var_suggestions().len();
+            if n > 0 {
+                state.url_suggest_idx = (state.url_suggest_idx + n - 1) % n;
+            }
+            EnvDirty::No
+        }
+        Action::UrlSuggestAccept => {
+            let suggestions = state.url_var_suggestions();
+            if let Some(name) = suggestions.get(state.url_suggest_idx).cloned() {
+                state.url_complete_var(&name);
+            }
+            EnvDirty::No
+        }
+        Action::UrlSuggestDismiss => {
+            // Insert a `}}` to close the token so the suggestion list collapses.
+            state.url_buf.push_str("}}");
+            state.url_suggest_idx = 0;
             EnvDirty::No
         }
         Action::UrlSubmit => {

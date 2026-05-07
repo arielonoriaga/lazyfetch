@@ -92,7 +92,11 @@ pub fn draw(f: &mut Frame, state: &AppState) -> DrawInfo {
                     .into()
             }
             Focus::Url => {
-                "URL: type to edit · Backspace · Enter commit · arrows leave pane · ? help".into()
+                if !state.url_var_suggestions().is_empty() {
+                    "URL: ↓/↑ pick · Tab/Enter accept · Esc close · keep typing to filter".into()
+                } else {
+                    "URL: type to edit · Enter send · Ctrl-w save · type {{ for var hints".into()
+                }
             }
             Focus::Response => {
                 let nav = if let Some(needle) = &state.search_active {
@@ -127,6 +131,9 @@ pub fn draw(f: &mut Frame, state: &AppState) -> DrawInfo {
     }
     if state.mode == Mode::SaveAs {
         draw_save_modal(f, state);
+    }
+    if state.focus == Focus::Url {
+        draw_url_suggestions(f, url_rect, state);
     }
     if state.help_open {
         draw_help(f);
@@ -178,6 +185,62 @@ fn compute_total_lines(state: &AppState) -> usize {
     let body = pretty_body(ct, &executed.response.body_bytes);
     let body = executed.secrets.redact(&body);
     body.lines().count()
+}
+
+fn draw_url_suggestions(f: &mut Frame, url_rect: Rect, state: &AppState) {
+    use ratatui::widgets::Clear;
+    let suggestions = state.url_var_suggestions();
+    if suggestions.is_empty() {
+        return;
+    }
+    let max_rows = suggestions.len().min(6) as u16;
+    let widest = suggestions.iter().map(|s| s.len()).max().unwrap_or(8) as u16;
+    let w = (widest + 6).clamp(20, 40);
+    let h = max_rows + 2; // +2 for borders
+    let x = url_rect.x + 8; // align under the URL text (after method badge)
+    let y = url_rect.y + url_rect.height; // just below the URL bar
+    let area = f.area();
+    let popup = Rect {
+        x: x.min(area.width.saturating_sub(w)),
+        y: y.min(area.height.saturating_sub(h)),
+        width: w,
+        height: h,
+    };
+    let title = Line::from(Span::styled(
+        " {{ var }} ",
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::Magenta)
+            .add_modifier(Modifier::BOLD),
+    ));
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Plain)
+        .border_style(Style::default().fg(Color::Magenta))
+        .title(title);
+    let inner = block.inner(popup);
+    f.render_widget(Clear, popup);
+    f.render_widget(block, popup);
+
+    let lines: Vec<Line> = suggestions
+        .iter()
+        .take(max_rows as usize)
+        .enumerate()
+        .map(|(i, name)| {
+            let selected = i == state.url_suggest_idx;
+            let style = if selected {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let mark = if selected { "▌ " } else { "  " };
+            Line::from(vec![Span::styled(format!("{}{}", mark, name), style)])
+        })
+        .collect();
+    f.render_widget(Paragraph::new(Text::from(lines)), inner);
 }
 
 fn draw_save_modal(f: &mut Frame, state: &AppState) {
@@ -546,6 +609,9 @@ fn draw_help(f: &mut Frame) {
         row("type / Bksp", "edit URL inline"),
         row("Alt-↑ / Alt-↓", "cycle HTTP method"),
         row(":method GET", "set method by name (any pane)"),
+        row("{{", "open variable suggestions"),
+        row("Tab / Enter", "accept selected variable"),
+        row("↑ / ↓", "navigate suggestions"),
         Line::from(""),
         section("Env pane"),
         row("j / k", "move row cursor"),
