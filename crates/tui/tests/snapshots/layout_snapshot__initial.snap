@@ -2,10 +2,10 @@
 source: crates/tui/tests/layout_snapshot.rs
 expression: s
 ---
-┌Collections───────────┐┌ URL ─────────────────────────────────────────────────┐
+╭  1  Collections ─────╮╭  2  URL ─────────────────────────────────────────────╮
 │No collections yet    ││ GET     (press Tab here, then type your URL — e.g. {{│
-│                      │└──────────────────────────────────────────────────────┘
-│Get started:          │┌Request───────────────────────────────────────────────┐
+│                      │╰──────────────────────────────────────────────────────╯
+│Get started:          │╭  3  Request ─────────────────────────────────────────╮
 │  lazyfetch           ││No request open                                       │
 │import-postman <file> ││                                                      │
 │  lazyfetch           ││Pick one from Collections (Tab),                      │
@@ -14,8 +14,8 @@ expression: s
 │                      ││  lazyfetch run <coll>/<request>                      │
 │Files live in         ││                                                      │
 │  .lazyfetch/collectio││                                                      │
-└──────────────────────┘└──────────────────────────────────────────────────────┘
-┌Environment───────────┐┌Response──────────────────────────────────────────────┐
+╰──────────────────────╯╰──────────────────────────────────────────────────────╯
+╭  5  Environment ─────╮╭  4  Response ────────────────────────────────────────╮
 │No environments yet   ││No response yet                                       │
 │                      ││                                                      │
 │Press 'a' to add a    ││Press 's' (any pane) or Enter (URL bar)               │
@@ -23,6 +23,6 @@ expression: s
 │(creates a 'default'  ││                                                      │
 │env)                  ││                                                      │
 │                      ││                                                      │
-└──────────────────────┘└──────────────────────────────────────────────────────┘
+╰──────────────────────╯╰──────────────────────────────────────────────────────╯
                                                                                 
-:  Tab cycle  ?  help  q quit
+ NORMAL  :  Tab cycle  ?  help  q quit

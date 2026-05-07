@@ -7,6 +7,7 @@ pub enum Action {
     FocusNext,
     FocusPrev,
     FocusDir(Dir),
+    FocusJump(Focus),
     EnvCursorUp,
     EnvCursorDown,
     EnvAdd { secret: bool },
@@ -115,6 +116,14 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
         (KeyCode::BackTab, _) => Action::FocusPrev,
         (KeyCode::Char(':'), KeyModifiers::NONE) => Action::EnterCommand,
         (KeyCode::Char('?'), _) => Action::ToggleHelp,
+        // Lazygit-style numeric jumps
+        (KeyCode::Char('1'), KeyModifiers::NONE) => Action::FocusJump(Focus::Collections),
+        (KeyCode::Char('2'), KeyModifiers::NONE) => Action::FocusJump(Focus::Url),
+        (KeyCode::Char('3'), KeyModifiers::NONE) => Action::FocusJump(Focus::Request),
+        (KeyCode::Char('4'), KeyModifiers::NONE) if state.focus != Focus::Response => {
+            Action::FocusJump(Focus::Response)
+        }
+        (KeyCode::Char('5'), KeyModifiers::NONE) => Action::FocusJump(Focus::Env),
         (KeyCode::Char('s'), KeyModifiers::CONTROL) => Action::SendRequest,
         // Response pane keys (vim navigation + search)
         (KeyCode::Char('j'), KeyModifiers::NONE) if state.focus == Focus::Response => {
@@ -266,6 +275,10 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
         }
         Action::FocusDir(d) => {
             state.focus = state.focus.neighbour(d);
+            EnvDirty::No
+        }
+        Action::FocusJump(f) => {
+            state.focus = f;
             EnvDirty::No
         }
         Action::EnvCursorUp => {

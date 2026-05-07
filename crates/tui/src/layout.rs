@@ -3,7 +3,7 @@ use crate::response as resp_render;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
+use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Wrap};
 use ratatui::Frame;
 
 /// Result of a draw pass — geometry the event loop needs to feed back into AppState.
@@ -65,6 +65,21 @@ pub fn draw(f: &mut Frame, state: &AppState) -> DrawInfo {
     );
     f.render_widget(toast, outer[1]);
 
+    // Mode badge — lazygit-style colored chunk on the left of the status bar.
+    let (mode_label, mode_fg, mode_bg) = match state.mode {
+        Mode::Normal => (" NORMAL ", Color::Black, Color::Cyan),
+        Mode::Insert => (" INSERT ", Color::Black, Color::Green),
+        Mode::Command => ("COMMAND ", Color::Black, Color::Magenta),
+        Mode::Search => (" SEARCH ", Color::Black, Color::Yellow),
+    };
+    let mode_span = Span::styled(
+        mode_label.to_string(),
+        Style::default()
+            .fg(mode_fg)
+            .bg(mode_bg)
+            .add_modifier(Modifier::BOLD),
+    );
+
     let status_text = match state.mode {
         Mode::Search => format!("/{}", state.search_buf),
         Mode::Command => format!(":{}", state.command_buf),
@@ -123,8 +138,12 @@ pub fn draw(f: &mut Frame, state: &AppState) -> DrawInfo {
             _ => ":  Tab cycle  ?  help  q quit".into(),
         },
     };
-    let status =
-        Paragraph::new(Line::from(status_text)).style(Style::default().fg(Color::DarkGray));
+    let status_line = Line::from(vec![
+        mode_span,
+        Span::raw(" "),
+        Span::styled(status_text, Style::default().fg(Color::DarkGray)),
+    ]);
+    let status = Paragraph::new(status_line);
     f.render_widget(status, outer[2]);
 
     if state.help_open {
@@ -145,18 +164,7 @@ pub fn draw(f: &mut Frame, state: &AppState) -> DrawInfo {
 }
 
 fn pane_response(f: &mut Frame, area: Rect, state: &AppState) -> (u16, u16, usize, Rect) {
-    let focused = state.focus == Focus::Response;
-    let border_style = if focused {
-        Style::default()
-            .fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title("Response")
-        .border_style(border_style);
+    let block = pane_block("Response", Focus::Response, state);
     let inner = block.inner(area);
     f.render_widget(block, area);
     render_response_inner(f, inner, state);
@@ -235,6 +243,7 @@ fn draw_help(f: &mut Frame) {
 
     let lines: Vec<Line> = vec![
         section("Global"),
+        row("1 2 3 4 5", "jump to pane (Coll · URL · Req · Resp · Env)"),
         row("h j k l", "(arrows) — spatial pane move"),
         row("Tab / S-Tab", "cycle pane focus"),
         row("?", "toggle this help"),
@@ -297,18 +306,7 @@ fn draw_help(f: &mut Frame) {
 }
 
 fn pane(f: &mut Frame, area: Rect, title: &str, my: Focus, state: &AppState) {
-    let focused = state.focus == my;
-    let border_style = if focused {
-        Style::default()
-            .fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(title)
-        .border_style(border_style);
+    let block = pane_block(title, my, state);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -338,7 +336,7 @@ fn pane(f: &mut Frame, area: Rect, title: &str, my: Focus, state: &AppState) {
                 f.render_widget(Paragraph::new(Text::from(lines)), inner);
             }
         }
-        Focus::Env => render_env(f, inner, state, focused),
+        Focus::Env => render_env(f, inner, state, state.focus == Focus::Env),
         Focus::Request => empty(
             f,
             inner,
@@ -622,6 +620,48 @@ fn mark_cursor_col(spans: Vec<Span<'static>>, col: usize) -> Vec<Span<'static>> 
     out
 }
 
+/// Build a styled pane block. Lazygit-style: rounded borders, numbered titles, focus accent.
+fn pane_block<'a>(title: &'a str, my: Focus, state: &AppState) -> Block<'a> {
+    let focused = state.focus == my;
+    let (border_color, title_style) = if focused {
+        (
+            Color::Yellow,
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )
+    } else {
+        (
+            Color::DarkGray,
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
+    };
+    let badge_n = pane_number(my);
+    let title_line = Line::from(vec![
+        Span::raw(" "),
+        Span::styled(format!(" {} ", badge_n), title_style),
+        Span::styled(format!(" {} ", title), Style::default().fg(border_color)),
+    ]);
+    Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(border_color))
+        .title(title_line)
+}
+
+fn pane_number(focus: Focus) -> u8 {
+    match focus {
+        Focus::Collections => 1,
+        Focus::Url => 2,
+        Focus::Request => 3,
+        Focus::Response => 4,
+        Focus::Env => 5,
+    }
+}
+
 /// Format a byte count with binary units (KiB, MiB, GiB) and one decimal of precision.
 fn human_bytes(n: u64) -> String {
     const KIB: u64 = 1024;
@@ -675,17 +715,7 @@ fn pretty_body(content_type: &str, body: &[u8]) -> String {
 
 fn render_url_bar(f: &mut Frame, area: Rect, state: &AppState) {
     let focused = state.focus == Focus::Url;
-    let border = if focused {
-        Style::default()
-            .fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(Color::DarkGray)
-    };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(" URL ")
-        .border_style(border);
+    let block = pane_block("URL", Focus::Url, state);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
