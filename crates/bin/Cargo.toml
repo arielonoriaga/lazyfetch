@@ -10,6 +10,7 @@ lazyfetch-core    = { path = "../core" }
 lazyfetch-http    = { path = "../http" }
 lazyfetch-storage = { path = "../storage" }
 lazyfetch-auth    = { path = "../auth" }
+lazyfetch-tui     = { path = "../tui" }
 clap              = { version = "4", features = ["derive"] }
 tokio             = { workspace = true }
 anyhow            = { workspace = true }

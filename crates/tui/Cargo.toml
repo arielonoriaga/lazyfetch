@@ -6,3 +6,11 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+lazyfetch-core    = { path = "../core" }
+lazyfetch-storage = { path = "../storage" }
+ratatui           = "0.28"
+crossterm         = "0.28"
+anyhow            = { workspace = true }
+
+[dev-dependencies]
+insta = "1"

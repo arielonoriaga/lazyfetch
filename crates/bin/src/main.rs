@@ -23,9 +23,9 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
         Some(Cmd::Run(a)) => run::run(a).await,
-        None => {
-            eprintln!("TUI not yet implemented (Task 9). Use `lazyfetch run <path>` for now.");
-            Ok(())
-        }
+        None => tokio::task::spawn_blocking(|| {
+            lazyfetch_tui::event::run(lazyfetch_tui::app::AppState::new())
+        })
+        .await?,
     }
 }
