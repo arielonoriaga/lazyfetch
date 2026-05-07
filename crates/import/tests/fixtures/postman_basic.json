@@ -1,0 +1,46 @@
+{
+  "info": { "name": "demo", "_postman_id": "x", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
+  "item": [
+    {
+      "name": "users",
+      "item": [
+        {
+          "name": "list",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base}}/users?page=1",
+              "query": [{ "key": "page", "value": "1" }]
+            }
+          }
+        },
+        {
+          "name": "create",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base}}/users" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"alice\"}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "ping",
+      "request": {
+        "method": "GET",
+        "url": "https://api.test/ping"
+      }
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{tok}}" }]
+  },
+  "variable": [{ "key": "base", "value": "https://api.test" }]
+}

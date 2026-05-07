@@ -1132,6 +1132,7 @@ dependencies = [
  "lazyfetch-auth",
  "lazyfetch-core",
  "lazyfetch-http",
+ "lazyfetch-import",
  "lazyfetch-storage",
  "lazyfetch-tui",
  "secrecy",
@@ -1180,6 +1181,14 @@ dependencies = [
 [[package]]
 name = "lazyfetch-import"
 version = "0.1.0"
+dependencies = [
+ "http",
+ "lazyfetch-core",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "ulid",
+]
 
 [[package]]
 name = "lazyfetch-storage"

@@ -11,6 +11,7 @@ lazyfetch-http    = { path = "../http" }
 lazyfetch-storage = { path = "../storage" }
 lazyfetch-auth    = { path = "../auth" }
 lazyfetch-tui     = { path = "../tui" }
+lazyfetch-import  = { path = "../import" }
 clap              = { version = "4", features = ["derive"] }
 tokio             = { workspace = true }
 anyhow            = { workspace = true }
