@@ -1031,15 +1031,38 @@ fn render_response_inner(f: &mut Frame, area: Rect, state: &AppState) {
 
     // Body lines are computed once on response receipt and cached on AppState.
     // We avoid re-pretty-printing + re-colorizing every frame.
-    let body_lines: Vec<Vec<Span<'static>>> = state
-        .last_response_lines
-        .clone()
-        .unwrap_or_else(|| resp_render::plain_lines(""));
-
-    // Search highlight (if active) — only mutate the cached lines when needed.
-    let (mut highlighted, _hits) = match state.search_active.as_deref() {
-        Some(n) if !n.is_empty() => resp_render::apply_search_highlight(body_lines, n),
-        _ => (body_lines, vec![]),
+    //
+    // Search highlight is also cached: highlighted_cache stores (body_gen, needle, lines).
+    // Hit → no work this frame; Miss (different gen, different needle) → recompute once.
+    let needle = state
+        .search_active
+        .as_deref()
+        .filter(|n| !n.is_empty())
+        .unwrap_or("");
+    let mut highlighted: Vec<Vec<Span<'static>>> = if needle.is_empty() {
+        state
+            .last_response_lines
+            .clone()
+            .unwrap_or_else(|| resp_render::plain_lines(""))
+    } else if let Some((gen, cached_needle, cached)) = state.highlighted_cache.as_ref() {
+        if *gen == state.body_gen && cached_needle == needle {
+            cached.clone()
+        } else {
+            // Stale cache — caller signals dirtiness; we render the base lines for this
+            // frame and let the next state mutation recompute. Since render is &state,
+            // we cannot populate the cache here; SearchSubmit / new-response paths do it.
+            let base = state
+                .last_response_lines
+                .clone()
+                .unwrap_or_else(|| resp_render::plain_lines(""));
+            resp_render::apply_search_highlight(base, needle).0
+        }
+    } else {
+        let base = state
+            .last_response_lines
+            .clone()
+            .unwrap_or_else(|| resp_render::plain_lines(""));
+        resp_render::apply_search_highlight(base, needle).0
     };
 
     let total = highlighted.len() as u16;

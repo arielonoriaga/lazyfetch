@@ -52,6 +52,8 @@ pub fn run(mut state: AppState, rt: Handle) -> anyhow::Result<()> {
                     };
                     state.last_response_pretty = Some(pretty);
                     state.last_response_lines = Some(lines);
+                    state.body_gen = state.body_gen.wrapping_add(1);
+                    state.highlighted_cache = None;
                     state.last_response = Some(executed);
                     state.last_error = None;
                     state.inflight = None;

@@ -152,6 +152,14 @@ pub struct AppState {
     pub last_response_pretty: Option<String>,
     /// Colorized body lines, computed once per response (or never if non-JSON).
     pub last_response_lines: Option<Vec<Vec<ratatui::text::Span<'static>>>>,
+    /// Memoized output of `apply_search_highlight` for the current `(body_gen, needle)`.
+    /// Cleared when a new response arrives or the search is cancelled. Kept here
+    /// instead of `RefCell` because both update sites already hold `&mut AppState`.
+    pub highlighted_cache: Option<(u64, String, Vec<Vec<ratatui::text::Span<'static>>>)>,
+    /// Generation counter — bumps on every new response receipt. Used as the cache key
+    /// for `highlighted_cache` so a stale highlight from a previous response can never
+    /// be displayed against fresh body lines.
+    pub body_gen: u64,
     pub last_error: Option<String>,
     pub inflight: Option<Receiver<Result<Executed, ExecError>>>,
     pub response_scroll: u16,
@@ -165,6 +173,9 @@ pub struct AppState {
     pub revealed_secrets: std::collections::HashSet<(ulid::Ulid, usize)>,
     pub save_buf: String,
     pub url_suggest_idx: usize,
+    /// Cache for `url_var_suggestions()` keyed on the partial prefix. Recomputes only
+    /// when the user types a new char or the active env changes.
+    url_suggestions_cache: std::cell::RefCell<Option<(String, Vec<String>)>>,
     pub coll_cursor: usize,
     pub expanded_colls: std::collections::HashSet<ulid::Ulid>,
     coll_rows_cache: std::cell::RefCell<Option<Vec<CollRow>>>,
@@ -203,6 +214,8 @@ impl AppState {
             last_response: None,
             last_response_pretty: None,
             last_response_lines: None,
+            highlighted_cache: None,
+            body_gen: 0,
             last_error: None,
             inflight: None,
             response_scroll: 0,
@@ -216,6 +229,7 @@ impl AppState {
             revealed_secrets: std::collections::HashSet::new(),
             save_buf: String::new(),
             url_suggest_idx: 0,
+            url_suggestions_cache: std::cell::RefCell::new(None),
             coll_cursor: 0,
             expanded_colls: std::collections::HashSet::new(),
             coll_rows_cache: std::cell::RefCell::new(None),
@@ -248,6 +262,7 @@ impl AppState {
         if let Some(i) = self.envs.iter().position(|e| e.name == name) {
             self.active_env = Some(i);
             self.env_cursor = 0;
+            self.invalidate_url_suggestions();
             true
         } else {
             false
@@ -266,6 +281,7 @@ impl AppState {
         ));
         self.env_cursor = env.vars.len().saturating_sub(1);
         self.active_env = Some(id);
+        self.invalidate_url_suggestions();
     }
 
     pub fn replace_var(&mut self, idx: usize, key: String, value: String, secret: bool) -> bool {
@@ -278,6 +294,7 @@ impl AppState {
                         secret,
                     },
                 );
+                self.invalidate_url_suggestions();
                 return true;
             }
         }
@@ -322,10 +339,18 @@ impl AppState {
     }
 
     /// Variable names matching the current URL prefix, sorted alphabetically.
+    /// Memoized on the prefix — recomputes only when the user changes the partial.
+    /// The cache is cleared explicitly via `invalidate_url_suggestions` when the
+    /// active env or env vars mutate (rare relative to keystrokes).
     pub fn url_var_suggestions(&self) -> Vec<String> {
         let Some(prefix) = self.url_var_prefix() else {
             return vec![];
         };
+        if let Some((cached_prefix, cached)) = self.url_suggestions_cache.borrow().as_ref() {
+            if *cached_prefix == prefix {
+                return cached.clone();
+            }
+        }
         let lower = prefix.to_lowercase();
         let mut names: Vec<String> = self
             .active_env_ref()
@@ -340,7 +365,12 @@ impl AppState {
             .collect();
         names.sort();
         names.dedup();
+        *self.url_suggestions_cache.borrow_mut() = Some((prefix, names.clone()));
         names
+    }
+
+    pub fn invalidate_url_suggestions(&self) {
+        *self.url_suggestions_cache.borrow_mut() = None;
     }
 
     /// Replace the active `{{<prefix>` with `{{<chosen>}}` and reset the suggestion cursor.
@@ -456,6 +486,7 @@ impl AppState {
         });
         self.active_env = Some(self.envs.len() - 1);
         self.env_cursor = 0;
+        self.invalidate_url_suggestions();
         true
     }
 
@@ -484,6 +515,7 @@ impl AppState {
                 } else if env.vars.is_empty() {
                     self.env_cursor = 0;
                 }
+                self.invalidate_url_suggestions();
                 return true;
             }
         }

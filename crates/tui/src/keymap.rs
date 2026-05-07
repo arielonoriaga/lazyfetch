@@ -772,6 +772,7 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
             state.search_active = None;
             state.search_match_lines.clear();
             state.search_match_idx = 0;
+            state.highlighted_cache = None;
             EnvDirty::No
         }
         Action::SearchSubmit => {
@@ -799,6 +800,12 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
                 state.search_match_lines = matches;
                 if let Some(&first) = state.search_match_lines.first() {
                     state.move_cursor_to(first);
+                }
+                // Populate the highlight cache so the very next render skips the
+                // apply_search_highlight call.
+                if let Some(base) = state.last_response_lines.clone() {
+                    let highlighted = crate::response::apply_search_highlight(base, &needle).0;
+                    state.highlighted_cache = Some((state.body_gen, needle.clone(), highlighted));
                 }
                 state.search_active = Some(needle);
             }
