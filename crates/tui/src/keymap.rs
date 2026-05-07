@@ -61,6 +61,11 @@ pub enum Action {
     SearchCancel,
     SearchNext,
     SearchPrev,
+    EnterSaveAs,
+    SaveAsChar(char),
+    SaveAsBackspace,
+    SaveAsSubmit,
+    SaveAsCancel,
     NoOp,
 }
 
@@ -76,6 +81,19 @@ pub fn dispatch(state: &AppState, ev: KeyEvent) -> Action {
         Mode::Command => dispatch_command(ev),
         Mode::Insert => dispatch_insert(ev),
         Mode::Search => dispatch_search(ev),
+        Mode::SaveAs => dispatch_save_as(ev),
+    }
+}
+
+fn dispatch_save_as(ev: KeyEvent) -> Action {
+    match (ev.code, ev.modifiers) {
+        (KeyCode::Esc, _) => Action::SaveAsCancel,
+        (KeyCode::Enter, _) => Action::SaveAsSubmit,
+        (KeyCode::Backspace, _) => Action::SaveAsBackspace,
+        (KeyCode::Char(c), KeyModifiers::NONE) | (KeyCode::Char(c), KeyModifiers::SHIFT) => {
+            Action::SaveAsChar(c)
+        }
+        _ => Action::NoOp,
     }
 }
 
@@ -99,6 +117,7 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
         return match (ev.code, ev.modifiers) {
             (KeyCode::Char('c'), KeyModifiers::CONTROL) => Action::Quit,
             (KeyCode::Char('s'), KeyModifiers::CONTROL) => Action::SendRequest,
+            (KeyCode::Char('w'), KeyModifiers::CONTROL) => Action::EnterSaveAs,
             (KeyCode::F(5), _) => Action::SendRequest,
             (KeyCode::Enter, _) => Action::SendRequest,
             (KeyCode::Tab, _) => Action::FocusNext,
@@ -706,6 +725,38 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
                 let target = state.search_match_lines[state.search_match_idx];
                 state.move_cursor_to(target);
             }
+            EnvDirty::No
+        }
+        Action::EnterSaveAs => {
+            if state.url_buf.is_empty() {
+                state.toast = Some("URL is empty — nothing to save".into());
+                return EnvDirty::No;
+            }
+            state.mode = Mode::SaveAs;
+            // Pre-fill with the last collection segment if any.
+            if state.save_buf.is_empty() {
+                if let Some(c) = state.collections.first() {
+                    state.save_buf = format!("{}/", c.name);
+                }
+            }
+            EnvDirty::No
+        }
+        Action::SaveAsChar(c) => {
+            state.save_buf.push(c);
+            EnvDirty::No
+        }
+        Action::SaveAsBackspace => {
+            state.save_buf.pop();
+            EnvDirty::No
+        }
+        Action::SaveAsCancel => {
+            state.mode = Mode::Normal;
+            EnvDirty::No
+        }
+        Action::SaveAsSubmit => {
+            let path = std::mem::take(&mut state.save_buf);
+            state.mode = Mode::Normal;
+            run_save(state, path.trim());
             EnvDirty::No
         }
         Action::NoOp => EnvDirty::No,

@@ -12,6 +12,7 @@ pub enum Mode {
     Command,
     Insert,
     Search,
+    SaveAs,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -138,6 +139,7 @@ pub struct AppState {
     pub response_total_lines: usize,
     pub last_layout: crate::layout::DrawInfo,
     pub revealed_secrets: std::collections::HashSet<(ulid::Ulid, usize)>,
+    pub save_buf: String,
     pub pending_g: bool,
     pub visual_anchor: Option<(usize, usize)>,
     pub search_buf: String,
@@ -175,6 +177,7 @@ impl AppState {
             response_total_lines: 0,
             last_layout: crate::layout::DrawInfo::default(),
             revealed_secrets: std::collections::HashSet::new(),
+            save_buf: String::new(),
             pending_g: false,
             visual_anchor: None,
             search_buf: String::new(),
