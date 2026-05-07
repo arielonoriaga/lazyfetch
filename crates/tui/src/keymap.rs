@@ -906,9 +906,54 @@ fn selection_text(state: &AppState) -> Option<String> {
     Some(out)
 }
 
+/// Pipe text to a system clipboard helper. These tools daemonize and retain ownership of
+/// the selection after our process exits, which `arboard` does not on X11/Wayland.
 fn copy_to_clipboard(s: &str) -> Result<(), String> {
-    let mut cb = arboard::Clipboard::new().map_err(|e| e.to_string())?;
-    cb.set_text(s.to_string()).map_err(|e| e.to_string())
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let on_wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
+    let on_x11 = std::env::var_os("DISPLAY").is_some();
+    let mut candidates: Vec<(&str, Vec<&str>)> = Vec::new();
+    if on_wayland {
+        candidates.push(("wl-copy", vec![]));
+    }
+    if on_x11 {
+        candidates.push(("xclip", vec!["-selection", "clipboard"]));
+        candidates.push(("xsel", vec!["--clipboard", "--input"]));
+    }
+    candidates.push(("pbcopy", vec![])); // macOS
+    candidates.push(("clip.exe", vec![])); // Windows / WSL
+
+    let mut last_err = String::from(
+        "no clipboard tool found in PATH (tried: wl-copy, xclip, xsel, pbcopy, clip.exe)",
+    );
+    for (cmd, args) in candidates {
+        let spawn = Command::new(cmd)
+            .args(&args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+        match spawn {
+            Ok(mut child) => {
+                if let Some(mut stdin) = child.stdin.take() {
+                    if let Err(e) = stdin.write_all(s.as_bytes()) {
+                        last_err = format!("{}: write failed: {}", cmd, e);
+                        continue;
+                    }
+                }
+                // Drop our handle so the helper can finish reading and detach.
+                // Don't wait() — wl-copy etc. fork a daemon and the parent exits cleanly.
+                let _ = child.wait();
+                return Ok(());
+            }
+            Err(e) => {
+                last_err = format!("{}: {}", cmd, e);
+            }
+        }
+    }
+    Err(last_err)
 }
 
 /// Pretty-print body identically to layout::pretty_body so search line indices line up.
