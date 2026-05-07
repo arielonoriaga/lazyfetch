@@ -50,7 +50,7 @@ pub fn run(mut state: AppState, rt: Handle) -> anyhow::Result<()> {
                 }
                 Ok(Err(e)) => {
                     state.last_error = Some(format!("{e}"));
-                    state.toast = Some("error".into());
+                    state.notify("error".to_string());
                     state.inflight = None;
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {}
@@ -70,17 +70,17 @@ pub fn run(mut state: AppState, rt: Handle) -> anyhow::Result<()> {
                         if let Some(env) = state.active_env_ref() {
                             let repo = FsEnvRepo::new(state.config_dir.join("environments"));
                             if let Err(e) = repo.save(env) {
-                                state.toast = Some(format!("save failed: {}", e));
+                                state.notify(format!("save failed: {}", e));
                             } else {
-                                state.toast = Some(format!("saved {}", env.name));
+                                state.notify(format!("saved {}", env.name));
                             }
                         }
                     }
                     if send_now {
                         if state.inflight.is_some() {
-                            state.toast = Some("send already in flight".into());
+                            state.notify("send already in flight".to_string());
                         } else if state.url_buf.is_empty() {
-                            state.toast = Some("URL is empty".into());
+                            state.notify("URL is empty".to_string());
                         } else {
                             state.toast =
                                 Some(format!("sending {} {}…", state.method, state.url_buf));

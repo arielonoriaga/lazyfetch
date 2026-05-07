@@ -27,6 +27,7 @@ pub enum Action {
     InsertCancel,
     ToggleHelp,
     CloseHelp,
+    CloseMessages,
     UrlChar(char),
     UrlBackspace,
     UrlSubmit,
@@ -91,6 +92,12 @@ pub enum Action {
 }
 
 pub fn dispatch(state: &AppState, ev: KeyEvent) -> Action {
+    if state.messages_open {
+        return match (ev.code, ev.modifiers) {
+            (KeyCode::Char('c'), KeyModifiers::CONTROL) => Action::Quit,
+            _ => Action::CloseMessages,
+        };
+    }
     if state.help_open {
         return match (ev.code, ev.modifiers) {
             (KeyCode::Char('c'), KeyModifiers::CONTROL) => Action::Quit,
@@ -408,7 +415,7 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
                 state.mode = Mode::Insert;
                 state.insert_buf = Some(InsertBuf::editing(cur, key, value, secret));
             } else {
-                state.toast = Some("nothing to edit".into());
+                state.notify("nothing to edit".to_string());
             }
             EnvDirty::No
         }
@@ -516,6 +523,10 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
             state.help_filter.clear();
             EnvDirty::No
         }
+        Action::CloseMessages => {
+            state.messages_open = false;
+            EnvDirty::No
+        }
         Action::UrlChar(c) => {
             state.url_buf.push(c);
             state.url_suggest_idx = 0;
@@ -554,18 +565,18 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
             EnvDirty::No
         }
         Action::UrlSubmit => {
-            state.toast = Some(format!("URL: {}", state.url_buf));
+            state.notify(format!("URL: {}", state.url_buf));
             state.focus = Focus::Request;
             EnvDirty::No
         }
         Action::MethodNext => {
             state.method = next_method(&state.method);
-            state.toast = Some(format!("method: {}", state.method));
+            state.notify(format!("method: {}", state.method));
             EnvDirty::No
         }
         Action::MethodPrev => {
             state.method = prev_method(&state.method);
-            state.toast = Some(format!("method: {}", state.method));
+            state.notify(format!("method: {}", state.method));
             EnvDirty::No
         }
         Action::SendRequest => {
@@ -657,7 +668,7 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
                 let len = current_line_len(state);
                 state.move_col_to(col, len);
             } else {
-                state.toast = Some("no matching brace from cursor".into());
+                state.notify("no matching brace from cursor".to_string());
             }
             EnvDirty::No
         }
@@ -716,16 +727,16 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
         Action::ToggleVisual => {
             if state.visual_anchor.is_some() {
                 state.visual_anchor = None;
-                state.toast = Some("visual off".into());
+                state.notify("visual off".to_string());
             } else {
                 state.visual_anchor = Some((state.response_cursor, state.response_col));
-                state.toast = Some("-- VISUAL --".into());
+                state.notify("-- VISUAL --".to_string());
             }
             EnvDirty::No
         }
         Action::EscapeVisual => {
             state.visual_anchor = None;
-            state.toast = Some("visual off".into());
+            state.notify("visual off".to_string());
             EnvDirty::No
         }
         Action::YankSelection => {
@@ -820,7 +831,7 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
                 return EnvDirty::No;
             }
             if let Some(name) = state.coll_open_selected() {
-                state.toast = Some(format!("loaded {}", name));
+                state.notify(format!("loaded {}", name));
                 state.focus = Focus::Url;
             }
             EnvDirty::No
@@ -916,7 +927,7 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
                 }
             }
             if state.marked_requests.is_empty() {
-                state.toast = Some("nothing to move (use 'x' to mark requests)".into());
+                state.notify("nothing to move (use 'x' to mark requests)".to_string());
                 return EnvDirty::No;
             }
             state.move_buf.clear();
@@ -944,7 +955,7 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
         }
         Action::EnterSaveAs => {
             if state.url_buf.is_empty() {
-                state.toast = Some("URL is empty — nothing to save".into());
+                state.notify("URL is empty — nothing to save".to_string());
                 return EnvDirty::No;
             }
             state.mode = Mode::SaveAs;
@@ -985,22 +996,26 @@ pub enum EnvDirty {
 
 fn run_command(state: &mut AppState, cmd: &str) -> EnvDirty {
     let cmd = cmd.trim();
+    if cmd == "messages" {
+        state.messages_open = true;
+        return EnvDirty::No;
+    }
     if let Some(name) = cmd.strip_prefix("env ").map(str::trim) {
         if state.switch_env(name) {
-            state.toast = Some(format!("env: {}", name));
+            state.notify(format!("env: {}", name));
         } else {
-            state.toast = Some(format!("env not found: {}", name));
+            state.notify(format!("env not found: {}", name));
         }
         return EnvDirty::No;
     }
     if let Some(name) = cmd.strip_prefix("newenv ").map(str::trim) {
         if name.is_empty() {
-            state.toast = Some("usage: :newenv <name>".into());
+            state.notify("usage: :newenv <name>".to_string());
         } else if state.create_env(name) {
-            state.toast = Some(format!("created env: {}", name));
+            state.notify(format!("created env: {}", name));
             return EnvDirty::Yes;
         } else {
-            state.toast = Some(format!("env already exists: {}", name));
+            state.notify(format!("env already exists: {}", name));
         }
         return EnvDirty::No;
     }
@@ -1010,9 +1025,9 @@ fn run_command(state: &mut AppState, cmd: &str) -> EnvDirty {
     if let Some(name) = cmd.strip_prefix("method ").map(str::trim) {
         if let Ok(m) = name.to_ascii_uppercase().parse::<http::Method>() {
             state.method = m;
-            state.toast = Some(format!("method: {}", state.method));
+            state.notify(format!("method: {}", state.method));
         } else {
-            state.toast = Some(format!("invalid method: {}", name));
+            state.notify(format!("invalid method: {}", name));
         }
         return EnvDirty::No;
     }
@@ -1020,7 +1035,7 @@ fn run_command(state: &mut AppState, cmd: &str) -> EnvDirty {
         state.should_quit = true;
         return EnvDirty::No;
     }
-    state.toast = Some(format!("unknown: {}", cmd));
+    state.notify(format!("unknown: {}", cmd));
     EnvDirty::No
 }
 
@@ -1391,7 +1406,7 @@ fn run_move(state: &mut AppState, target: &str) {
     use lazyfetch_core::catalog::Item;
     use lazyfetch_storage::collection::FsCollectionRepo;
     if target.is_empty() {
-        state.toast = Some("usage: type target collection name".into());
+        state.notify("usage: type target collection name".to_string());
         return;
     }
     let repo = FsCollectionRepo::new(state.config_dir.join("collections"));
@@ -1445,7 +1460,7 @@ fn run_rename(state: &mut AppState, target: Option<crate::app::RenameTarget>, ne
     use lazyfetch_storage::collection::FsCollectionRepo;
     let Some(target) = target else { return };
     if new.is_empty() {
-        state.toast = Some("name is empty".into());
+        state.notify("name is empty".to_string());
         return;
     }
     let repo = FsCollectionRepo::new(state.config_dir.join("collections"));
@@ -1459,7 +1474,7 @@ fn run_rename(state: &mut AppState, target: Option<crate::app::RenameTarget>, ne
                     if let Some(c) = state.collections.get_mut(idx) {
                         c.name = new.to_string();
                     }
-                    state.toast = Some(format!("renamed {} → {}", old, new));
+                    state.notify(format!("renamed {} → {}", old, new));
                 }
                 Err(e) => state.toast = Some(format!("rename failed: {}", e)),
             }
@@ -1476,7 +1491,7 @@ fn run_rename(state: &mut AppState, target: Option<crate::app::RenameTarget>, ne
                     {
                         r.name = new.to_string();
                     }
-                    state.toast = Some(format!("renamed {} → {}", old, new));
+                    state.notify(format!("renamed {} → {}", old, new));
                 }
                 Err(e) => state.toast = Some(format!("rename failed: {}", e)),
             }
@@ -1492,12 +1507,12 @@ fn run_save(state: &mut AppState, arg: &str) -> EnvDirty {
     let (coll, name) = match arg.split_once('/') {
         Some((c, n)) if !c.is_empty() && !n.is_empty() => (c, n),
         _ => {
-            state.toast = Some("usage: :save <collection>/<name>".into());
+            state.notify("usage: :save <collection>/<name>".to_string());
             return EnvDirty::No;
         }
     };
     if state.url_buf.is_empty() {
-        state.toast = Some("URL is empty — type one in the URL pane first".into());
+        state.notify("URL is empty — type one in the URL pane first".to_string());
         return EnvDirty::No;
     }
     let req = Request {
@@ -1517,7 +1532,7 @@ fn run_save(state: &mut AppState, arg: &str) -> EnvDirty {
     let repo = FsCollectionRepo::new(state.config_dir.join("collections"));
     match repo.save_request(coll, &req) {
         Ok(()) => {
-            state.toast = Some(format!("saved {}/{}", coll, name));
+            state.notify(format!("saved {}/{}", coll, name));
             // Reload the collection so it shows up in the Collections pane.
             if let Ok(c) = repo.load_by_name(coll) {
                 if let Some(idx) = state.collections.iter().position(|x| x.name == c.name) {

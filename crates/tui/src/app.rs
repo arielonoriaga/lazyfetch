@@ -170,6 +170,8 @@ pub struct AppState {
     pub rename_target: Option<RenameTarget>,
     pub rename_buf: String,
     pub help_filter: String,
+    pub messages: std::collections::VecDeque<String>,
+    pub messages_open: bool,
     pub pending_g: bool,
     pub visual_anchor: Option<(usize, usize)>,
     pub search_buf: String,
@@ -217,6 +219,8 @@ impl AppState {
             rename_target: None,
             rename_buf: String::new(),
             help_filter: String::new(),
+            messages: std::collections::VecDeque::with_capacity(64),
+            messages_open: false,
             pending_g: false,
             visual_anchor: None,
             search_buf: String::new(),
@@ -408,6 +412,17 @@ impl AppState {
             }
             CollRow::Coll { .. } => None,
         }
+    }
+
+    /// Push a transient message both to the visible toast slot and into the rolling
+    /// `:messages` history (capped at 64 entries — oldest dropped). Use this instead of
+    /// setting `state.toast = Some(...)` directly so nothing slips out of the audit trail.
+    pub fn notify(&mut self, msg: String) {
+        if self.messages.len() >= 64 {
+            self.messages.pop_front();
+        }
+        self.messages.push_back(msg.clone());
+        self.toast = Some(msg);
     }
 
     pub fn create_env(&mut self, name: &str) -> bool {

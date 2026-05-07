@@ -151,6 +151,9 @@ pub fn draw(f: &mut Frame, state: &AppState) -> DrawInfo {
     if state.help_open {
         draw_help(f, state);
     }
+    if state.messages_open {
+        draw_messages(f, state);
+    }
 
     DrawInfo {
         response_height: resp_info.0,
@@ -750,6 +753,84 @@ fn draw_env_var_modal(f: &mut Frame, state: &AppState) {
     f.render_widget(Paragraph::new(footer), rows[5]);
 }
 
+fn draw_messages(f: &mut Frame, state: &AppState) {
+    use ratatui::widgets::Clear;
+    let area = f.area();
+    let w = area.width.min(80);
+    let h = area.height.min(24);
+    let x = area.x + (area.width.saturating_sub(w)) / 2;
+    let y = area.y + (area.height.saturating_sub(h)) / 2;
+    let popup = Rect {
+        x,
+        y,
+        width: w,
+        height: h,
+    };
+    let title = Line::from(vec![
+        Span::styled(
+            " Messages ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!(" (last {} · any key closes) ", state.messages.len()),
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        ),
+    ]);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Plain)
+        .border_style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
+        .title(title);
+    let inner = block.inner(popup);
+    f.render_widget(Clear, popup);
+    f.render_widget(block, popup);
+
+    if state.messages.is_empty() {
+        let p = Paragraph::new(Line::from(Span::styled(
+            "  (no messages yet — toasts will accumulate here)",
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        )));
+        f.render_widget(p, inner);
+        return;
+    }
+    let visible = inner.height as usize;
+    let total = state.messages.len();
+    let start = total.saturating_sub(visible);
+    let lines: Vec<Line> = state
+        .messages
+        .iter()
+        .enumerate()
+        .skip(start)
+        .map(|(i, m)| {
+            let n = i + 1;
+            Line::from(vec![
+                Span::styled(
+                    format!(" {:>3} ", n),
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(m.clone(), Style::default().fg(Color::White)),
+            ])
+        })
+        .collect();
+    f.render_widget(
+        Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false }),
+        inner,
+    );
+}
+
 fn draw_help(f: &mut Frame, state: &AppState) {
     use ratatui::widgets::Clear;
 
@@ -835,6 +916,7 @@ fn draw_help(f: &mut Frame, state: &AppState) {
         row("Ctrl-s", "send (any pane, any mode)"),
         row("Ctrl-w", "save URL+method as request (popup, any pane)"),
         row(":save api/users", "save URL+method as <coll>/<name>"),
+        row(":messages", "open scrollable history of all toasts"),
         Line::from(""),
         section("Response pane"),
         row("j / k", "line up/down"),

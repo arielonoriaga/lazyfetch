@@ -3,11 +3,11 @@
 # lazyfetch
 
 <a href="https://github.com/arielonoriaga/lazyfetch">
-  <img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=600&size=18&duration=3500&pause=1200&color=58A6FF&center=true&vCenter=true&width=620&lines=Postman+in+your+terminal.;Vim+keys.+No+Electron.+No+account.;YAML+collections+%E2%80%94+git-friendly+by+design.;Hexagonal+Rust.+IO-free+core.+24+tests+green." alt="typing SVG" />
+  <img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=600&size=18&duration=3500&pause=1200&color=58A6FF&center=true&vCenter=true&width=620&lines=Postman+in+your+terminal.;Vim+keys.+No+Electron.+No+account.;YAML+collections+%E2%80%94+git-friendly+by+design.;Hexagonal+Rust.+IO-free+core.+54+tests+green." alt="typing SVG" />
 </a>
 
 **A terminal-first HTTP client. Sibling to `lazygit` and `lazydocker`.**
-Send requests, manage collections, switch environments, import from Postman — all without leaving the keyboard.
+Send requests, manage collections + envs, vim-navigate the JSON response, import from Postman — all without leaving the keyboard.
 
 <p>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable-orange?style=flat-square&logo=rust" />
@@ -18,9 +18,9 @@ Send requests, manage collections, switch environments, import from Postman — 
   <img alt="status" src="https://img.shields.io/badge/status-v0.1%20alpha-FF5D01?style=flat-square" />
 </p>
 
-| 🦀 7 crates | ✅ 24 tests | 🧪 IO-free core | 🔐 secret-aware redaction |
-|:---:|:---:|:---:|:---:|
-| Hexagonal workspace | wiremock + insta + proptest | `cargo deny` + grep guard | unified across log / save / history |
+| 🦀 7 crates | ✅ 54 tests | 🧪 IO-free core | 🔐 secret redaction | 🖱️ mouse + vim |
+|:---:|:---:|:---:|:---:|:---:|
+| Hexagonal workspace | wiremock + insta + proptest | `cargo deny` + grep guard | unified across log / save / history / yank | clicks + `hjkl` + `vy` |
 
 </div>
 
@@ -28,22 +28,24 @@ Send requests, manage collections, switch environments, import from Postman — 
 
 ## Why
 
-Postman and Insomnia are powerful but heavy: GUI app, account, cloud sync you didn't ask for, opaque storage. The `lazy*` family (`lazygit`, `lazydocker`) proved that terminal-native UX wins for developer tools. `lazyfetch` does the same for HTTP.
+Postman and Insomnia are powerful but heavy: GUI app, account, cloud sync you didn't ask for, opaque storage. The `lazy*` family proved that terminal-native UX wins for developer tools. `lazyfetch` does the same for HTTP.
 
 ```
-┌─ Collections ──┬─ Request ─────────────────────────────────┐
-│ ▸ my-api       │ [GET ▾] {{base}}/users/{{id}}             │
-│   ▾ users      │ ─ Params ─ Headers ─ Body ─ Auth ─        │
-│     • list     │ key            value         [x]          │
-│     • get      │                                           │
-│ ▸ stripe       ├─ Response ────────────── 200 OK · 142ms ─┤
-│                │ ─ Body ─ Headers ─ Cookies ─ Timing ─    │
-├─ Environment ──┤ {                                         │
-│ [dev ▾]        │   "users": [...]                          │
-│ base=...       │ }                                         │
-│ token=***      │                                           │
-└────────────────┴───────────────────────────────────────────┘
- :send  /search  e edit  s send  S save  ? help  q quit
+┌ 1  Collections ──────────┬ 2  URL ────────────────────────────────────┐
+│ ▾ api (3)                │ GET     {{API_URL}}/users/{{id}}▏          │
+│   ✓ GET    list          ├ 3  Request ────────────────────────────────┤
+│ ▌ ✓ GET    get           │                                             │
+│     POST   create        │ (no request open)                           │
+│ ▸ stripe (5)             │                                             │
+├ 5  Environment ──────────├ 4  Response ───────────────────────────────┤
+│ [dev]  (1/2 envs)        │ 200 · 142ms · 1.4 KiB · json                │
+│ ▌ API_URL = https://...  │                                             │
+│   🔒 TOKEN = ***         │ {                                           │
+│                          │   "users": [                                │
+│                          │     { "id": 1, "name": "alice" }            │
+│                          │   ]                                         │
+└──────────────────────────┴─────────────────────────────────────────────┘
+ NORMAL  Tab cycle · ? help · :messages · q quit
 ```
 
 ---
@@ -56,47 +58,44 @@ cd lazyfetch
 cargo install --path crates/bin
 ```
 
-Requires Rust stable (≥ 1.85). No system deps — `rustls` everywhere, no OpenSSL.
+Requires Rust stable (≥ 1.85). No system deps — `rustls` everywhere, no OpenSSL. Optional clipboard helpers: `wl-copy` (Wayland) / `xclip` (X11) / `pbcopy` (macOS) / `clip.exe` (Windows).
 
 ---
 
 ## Use
 
-### Headless — `lazyfetch run`
+### Interactive TUI
 
 ```bash
-# Send a saved request
-lazyfetch run my-api/users/list --env dev
-
-# Override variables on the fly
-lazyfetch run my-api/users/get --env dev --set id=42
-
-# Custom config dir (default: ~/.config/lazyfetch)
-lazyfetch run my-api/ping --config-dir ./fixtures
+lazyfetch
 ```
 
-### Import from Postman
+Press `?` for help anywhere — it's a filterable popup.
+
+### Headless CLI
 
 ```bash
-lazyfetch import-postman ./postman_collection.json            # → global ~/.config/lazyfetch
-lazyfetch import-postman ./postman_collection.json --local    # → project ./.lazyfetch
+lazyfetch run my-api/users/list --env dev               # send a saved request
+lazyfetch run my-api/users/get --env dev --set id=42    # override a var
+lazyfetch import-postman ./collection.json              # → global config
+lazyfetch import-postman ./collection.json --local      # → ./.lazyfetch
 ```
-
-Postman v2.1 collections become first-class YAML files. `git init` the directory and share with your team. No cloud, no account, no lock-in.
 
 ### Project-local collections (`.lazyfetch/`)
 
-Drop a `.lazyfetch/` directory in your project (mirrors `.git/` semantics). lazyfetch walks up from your current working directory and uses the nearest match:
+Drop a `.lazyfetch/` directory next to your `.git/`. lazyfetch walks up from your cwd and uses the nearest match:
 
 ```
 my-app/
 ├── .git/
-├── .lazyfetch/                  ← discovered automatically
+├── .lazyfetch/                    ← discovered automatically
 │   ├── collections/
 │   │   └── api/
 │   │       ├── collection.yaml
 │   │       └── requests/
-│   │           └── health.yaml
+│   │           ├── health.yaml
+│   │           └── users/
+│   │               └── list.yaml
 │   └── environments/
 │       ├── dev.yaml
 │       └── prod.yaml
@@ -105,36 +104,140 @@ my-app/
 
 Resolution: `--config-dir` flag → nearest `.lazyfetch/` ancestor → `~/.config/lazyfetch/`. Commit `.lazyfetch/` next to your code; every contributor gets the same requests + envs.
 
-### Interactive TUI
+---
 
-```bash
-lazyfetch
-```
+## Panes
 
-`Tab` cycles panes, `q` quits. (Editor + send + response viewer land in v0.2.)
+Five panes in a 2x3 grid (URL bar spans the right top row):
+
+| # | Pane | Purpose |
+|---|---|---|
+| 1 | **Collections** | Tree of saved requests grouped by collection |
+| 2 | **URL** | Method badge + URL template (`{{var}}` autocomplete on `{{`) |
+| 3 | **Request** | Headers, query, body editor *(v0.2)* |
+| 4 | **Response** | Status, body, vim-navigable, JSON-colorized, search/filter |
+| 5 | **Environment** | Active env vars w/ secret-aware reveal toggle |
+
+`Tab` / `Shift-Tab` cycle. `1`–`5` jump directly. `h`/`j`/`k`/`l` and arrows move spatially when not on Response. Click any pane to focus.
 
 ---
 
-## Storage — your data, your repo
+## Keys
+
+### Universal
+
+| Key | Action |
+|---|---|
+| `?` | toggle filterable help popup |
+| `:` | command mode |
+| `q` / `Ctrl-c` | quit |
+| `F5` | **send request** (any pane / any mode) |
+| `Ctrl-s` | send |
+| `Ctrl-w` | save URL+method as request → popup |
+| `:messages` | scrollable history of all toasts (last 64) |
+
+### URL bar (pane 2)
+
+| Key | Action |
+|---|---|
+| typing | edit URL |
+| `Enter` | send |
+| `Alt-↑` / `Alt-↓` | cycle HTTP method (GET → POST → PUT → PATCH → DELETE → HEAD → OPTIONS) |
+| `:method DELETE` | set method by name |
+| `{{` | open variable autocomplete; `↑`/`↓` pick, `Tab`/`Enter` accept |
+
+### Response pane (pane 4) — vim-style
+
+| Key | Action |
+|---|---|
+| `j` / `k` / `↓` / `↑` | line up/down |
+| `h` / `l` / `←` / `→` | char left/right |
+| `0` / `$` | line start / end |
+| `w` / `b` | word forward / back |
+| `Ctrl-d` / `Ctrl-u` | half page |
+| `Ctrl-f` / `Ctrl-b` | full page |
+| `gg` / `G` | top / bottom |
+| `{` / `}` | prev / next blank line |
+| `H` / `M` / `L` | viewport top / mid / bottom |
+| `%` | matching brace `{ } [ ]` |
+| `]` / `[` | next / prev sibling block (same indent) |
+| `v` | toggle visual select |
+| `y` | yank selection (or line) → clipboard |
+| `/` | search; `n` / `N` next/prev match |
+| **left-click** | move cursor to clicked cell |
+| **scroll wheel** | scroll cursor ±3 lines |
+
+JSON bodies are color-coded (keys cyan, strings green, numbers magenta, bool yellow, null red). Status line: `200 · 142ms · 1.4 KiB · json`.
+
+### Environment pane (pane 5)
+
+| Key | Action |
+|---|---|
+| `j` / `k` | row cursor |
+| `a` / `A` | add variable / secret variable (popup) |
+| `e` | edit selected (popup, pre-filled) |
+| `d` | delete selected |
+| `m` | toggle secret flag |
+| `r` | reveal / hide secret value (transient, in-memory only) |
+| `:env <name>` | switch active environment |
+| `:newenv <name>` | create new environment |
+
+### Collections pane (pane 1)
+
+| Key | Action |
+|---|---|
+| `j` / `k` | row cursor |
+| `Space` | expand / collapse collection |
+| `Enter` | open request → loads URL + method into URL bar |
+| `r` | rename collection / request (popup) |
+| `x` | mark / unmark request |
+| `M` | move marked (or cursor) requests → another collection (popup) |
+
+---
+
+## Variables
+
+`{{var}}` placeholders interpolate at send time, scoped:
 
 ```
-~/.config/lazyfetch/
+--set k=v         (CLI override, highest)
+   ↓
+environments/<env>.yaml   (--env flag picks one; or `:env` in TUI)
+   ↓
+collection.yaml vars       (default fallback)
+   ↓
+MissingVar error           (no match)
+```
+
+**Secret discipline.** Variables flagged `secret: true` flow through a single `SecretRegistry`. Every output surface — history, raw-view toggle, save dialog, log sinks, clipboard yank — runs through one redactor. Auth fields (`Bearer.token`, `Basic.pass`, `ApiKey.value`, `OAuth2.client_secret`) are **rejected at apply time** if their template references a non-secret variable.
+
+Env files are saved with `0600` permissions on Unix.
+
+---
+
+## Storage
+
+```
+~/.config/lazyfetch/             (or .lazyfetch/ in your project)
 ├── config.yaml
 ├── collections/
 │   └── my-api/
 │       ├── collection.yaml          # name, vars, auth
 │       └── requests/
-│           ├── users/
-│           │   ├── _folder.yaml
-│           │   ├── list.yaml        # one Request = one file
-│           │   └── get.yaml
-│           └── ping.yaml
+│           ├── _folder.yaml
+│           ├── ping.yaml            # one Request = one file
+│           └── users/
+│               ├── _folder.yaml
+│               ├── list.yaml
+│               └── get.yaml
 └── environments/
-    ├── dev.yaml
+    ├── dev.yaml                     # 0600 on Unix
     └── prod.yaml
 ```
 
-YAML is hand-editable, diff-friendly, comment-friendly. Each `Request` is its own file so a 200-request collection produces 200 small diffs, not one giant blob.
+YAML is hand-editable, diff-friendly, comment-friendly. Each `Request` is its own file so a 200-request collection produces 200 small diffs.
+
+History: `~/.local/share/lazyfetch/history.jsonl` (append-only, `fd-lock` guarded).
 
 ---
 
@@ -143,22 +246,18 @@ YAML is hand-editable, diff-friendly, comment-friendly. Each `Request` is its ow
 Hexagonal Cargo workspace. `core` is pure domain — no `tokio`, no `std::fs`, no network. Adapters live in their own crates. CI greps `core` for IO calls and fails on hits.
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│ bin   →   tui   →   core   ←   { http, storage, auth, import } │
-└────────────────────────────────────────────────────────────┘
+bin → tui → core ← { http, storage, auth, import }
 ```
 
 | Crate | Responsibility |
 |---|---|
 | `core` | `Collection`, `Request`, `AuthSpec`, `WireRequest`, ports (`HttpSender`, `AuthCache`, `Clock`, `Browser`, `Editor`), `interpolate()`, `execute()`, `redact_wire()` |
 | `http` | `reqwest` adapter, redirect policy, error mapping |
-| `storage` | YAML collections (file-per-Request), env round-trip, JSONL history with `fd-lock`, atomic write (same-dir tempfile + `Drop` guard) |
-| `auth` | `Bearer` / `Basic` / `ApiKey` resolvers with secret-only validation. OAuth2 stubbed for v0.2. |
+| `storage` | YAML collections (file-per-Request), env round-trip with 0600 perms, JSONL history with `fd-lock`, atomic write (same-dir tempfile + `Drop` guard), rename / move helpers with collision detection |
+| `auth` | `Bearer` / `Basic` / `ApiKey` resolvers with secret-only validation. OAuth2 stubbed for v0.3. |
 | `import` | Postman v2.1 → core types, `ImportReport` warnings, DoS-bound parser |
-| `tui` | `ratatui` + `crossterm`, alt-screen + raw-mode `Drop` guard, 4-pane layout |
+| `tui` | `ratatui` + `crossterm`, alt-screen + raw-mode `Drop` guard, 5 panes + 5 modal popups, mouse + vim navigation, search, JSON colorizer |
 | `bin` | composition root + CLI (`run`, `import-postman`) |
-
-`{{var}}` interpolation lookup: per-request overrides → environment → collection vars. Every interpolated value carries a `SecretRegistry`; redaction is unified across history snapshots, raw-view toggles, log sinks, and `S`-save dialogs. Templates referencing non-secret variables in secret-only fields (`Bearer.token`, `Basic.pass`, `ApiKey.value`, `OAuth2.client_secret`) are **rejected at apply time**.
 
 ---
 
@@ -166,39 +265,38 @@ Hexagonal Cargo workspace. `core` is pure domain — no `tokio`, no `std::fs`, n
 
 | Version | Status |
 |---|---|
-| **v0.1 alpha** | ✅ Backend + CLI + Postman import + TUI shell |
-| v0.2 | TUI body editor (`tui-textarea` + `$EDITOR`), response viewer (`syntect` + `jaq` filter), `/`-search, `S`-save |
-| v0.3 | OAuth2 (Client Credentials + Authorization Code w/ PKCE + loopback callback) |
-| v0.4 | OpenAPI 3 import, history viewer, theme + keymap config |
-| v0.5 | Cookie jar, detailed timings (DNS / connect / TLS / TTFB), OS keyring |
+| **v0.1 alpha** | ✅ Backend + CLI + TUI w/ env+collection management, vim navigation, search, mouse, JSON colorize, save / rename / move popups, autocomplete, `:messages` |
+| v0.2 | Body editor (`tui-textarea` + `$EDITOR`), header/query row editing, `jaq` filter expressions, OpenAPI 3 import |
+| v0.3 | OAuth2 (Client Credentials + Authorization Code w/ PKCE + loopback callback) + OS keyring |
+| v0.4 | History viewer pane, theme + keymap config, nested folder navigation in Collections |
+| v0.5 | Cookie jar, detailed timings (DNS / connect / TLS / TTFB), session export to cURL |
 
-Spec: [`docs/superpowers/specs/2026-05-07-lazyfetch-design.md`](docs/superpowers/specs/2026-05-07-lazyfetch-design.md)
-Plan: [`docs/superpowers/plans/2026-05-07-lazyfetch-v1.md`](docs/superpowers/plans/2026-05-07-lazyfetch-v1.md)
+Spec: [`docs/superpowers/specs/2026-05-07-lazyfetch-design.md`](docs/superpowers/specs/2026-05-07-lazyfetch-design.md) · Plan: [`docs/superpowers/plans/2026-05-07-lazyfetch-v1.md`](docs/superpowers/plans/2026-05-07-lazyfetch-v1.md)
 
 ---
 
 ## Develop
 
 ```bash
-cargo test --workspace                       # 24 tests
+cargo test --workspace                                          # 54 tests
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
-bash scripts/check-core-purity.sh            # enforce IO-free core
+bash scripts/check-core-purity.sh                               # enforce IO-free core
 ```
 
 CI runs all of the above plus `cargo deny check` on every push.
 
 <details>
-<summary><strong>Test inventory</strong></summary>
+<summary><strong>Test inventory (54)</strong></summary>
 
 | Crate | Tests |
 |---|---|
 | `core` | 5 interpolation (incl. proptest) + 3 auth-walk + 1 wire redaction |
-| `storage` | atomic write + collection round-trip + env round-trip + 50-thread concurrent JSONL append |
+| `storage` | atomic write + collection round-trip + env round-trip + 50-thread concurrent JSONL append + **10 mutation tests** (save_request scaffold, rename collection / request, move_request — happy + collision + missing) |
 | `http` | wiremock GET → status + headers |
 | `auth` | Bearer (secret + non-secret reject) + Basic encoding + ApiKey query |
-| `bin` | end-to-end binary spawn → wiremock → status assert |
-| `tui` | keymap dispatch + `TestBackend` snapshot |
+| `bin` | end-to-end binary spawn → wiremock → status assert + project-local discovery via nested cwd |
+| `tui` | 16 keymap dispatch tests + `TestBackend` snapshot |
 | `import` | Postman golden fixture + DoS oversize reject |
 
 </details>
@@ -207,17 +305,18 @@ CI runs all of the above plus `cargo deny check` on every push.
 
 ## Philosophy
 
-- **Domain-driven, hexagonal.** Bounded contexts as crates. Ports as traits. Adapters at the edge.
-- **TDD throughout.** Tests drive the design, not document it after the fact.
-- **YAGNI ruthlessly.** No speculative abstraction. Three similar lines beat a premature trait.
-- **Secrets are first-class.** Every secret value flows through `SecretRegistry`. There is no path that prints `Authorization: Bearer <token>` verbatim — including logs and history.
+- **Domain-driven, hexagonal.** Bounded contexts as crates. Ports as traits. Adapters at the edge. CI greps `core` for `tokio::` / `std::fs::` and fails on hits.
+- **TDD throughout.** Tests drive the design.
+- **YAGNI ruthlessly.** No speculative abstraction. Three similar lines beat a premature trait. Big refactors land when they pay for themselves.
+- **Secrets are first-class.** Single `SecretRegistry` per request. Every surface — history, log, raw view, save, clipboard — redacts through one path. Env files are 0600.
 - **Plain files win.** YAML + JSONL. `git init` your collections. Open them in your editor. Diff them. Share them.
+- **Atomic writes everywhere.** Same-directory tempfile + `rename`. Drop guards clean up on panic. Slug collisions detected and refused.
 
 ---
 
 ## Tech
 
-`rust` `ratatui` `crossterm` `tokio` `reqwest` `rustls` `hyper` `serde` `serde_yaml` `secrecy` `ulid` `blake3` `fd-lock` `tempfile` `tracing` `thiserror` `proptest` `wiremock` `insta` `clap` `dirs`
+`rust` `ratatui` `crossterm` `tokio` `reqwest` `rustls` `hyper` `serde` `serde_yaml` `secrecy` `ulid` `blake3` `fd-lock` `tempfile` `tracing` `thiserror` `proptest` `wiremock` `insta` `clap` `dirs` `jaq` `arboard`/`wl-copy`/`xclip`
 
 ---
 
