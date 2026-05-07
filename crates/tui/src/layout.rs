@@ -620,35 +620,45 @@ fn mark_cursor_col(spans: Vec<Span<'static>>, col: usize) -> Vec<Span<'static>> 
     out
 }
 
-/// Build a styled pane block. Lazygit-style: rounded borders, numbered titles, focus accent.
+/// Build a styled pane block. Lazygit feel: solid white borders, numbered titles, focus accent.
 fn pane_block<'a>(title: &'a str, my: Focus, state: &AppState) -> Block<'a> {
     let focused = state.focus == my;
-    let (border_color, title_style) = if focused {
+    let (border_color, title_fg, badge_style) = if focused {
         (
-            Color::Yellow,
+            Color::Green,
+            Color::White,
             Style::default()
                 .fg(Color::Black)
-                .bg(Color::Yellow)
+                .bg(Color::Green)
                 .add_modifier(Modifier::BOLD),
         )
     } else {
         (
-            Color::DarkGray,
+            Color::White,
+            Color::White,
             Style::default()
-                .fg(Color::Cyan)
+                .fg(Color::Black)
+                .bg(Color::White)
                 .add_modifier(Modifier::BOLD),
         )
     };
     let badge_n = pane_number(my);
     let title_line = Line::from(vec![
         Span::raw(" "),
-        Span::styled(format!(" {} ", badge_n), title_style),
-        Span::styled(format!(" {} ", title), Style::default().fg(border_color)),
+        Span::styled(format!(" {} ", badge_n), badge_style),
+        Span::styled(
+            format!(" {} ", title),
+            Style::default().fg(title_fg).add_modifier(Modifier::BOLD),
+        ),
     ]);
     Block::default()
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(border_color))
+        .border_type(BorderType::Plain)
+        .border_style(Style::default().fg(border_color).add_modifier(if focused {
+            Modifier::BOLD
+        } else {
+            Modifier::empty()
+        }))
         .title(title_line)
 }
 
