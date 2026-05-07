@@ -147,6 +147,8 @@ fn draw_help(f: &mut Frame) {
         section("URL bar"),
         row("type / Bksp", "edit URL inline"),
         row("Enter", "commit · jump to Request"),
+        row("Alt-↑ / Alt-↓", "cycle HTTP method"),
+        row(":method GET", "set method by name (any pane)"),
         Line::from(""),
         section("Env pane"),
         row("j / k", "move row cursor"),

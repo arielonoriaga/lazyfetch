@@ -142,6 +142,32 @@ fn env_delete_var() {
 }
 
 #[test]
+fn alt_arrows_cycle_method_in_url_bar() {
+    let mut s = state();
+    while s.focus != Focus::Url {
+        step(&mut s, ev(KeyCode::Tab));
+    }
+    assert_eq!(s.method, http::Method::GET);
+    step(&mut s, KeyEvent::new(KeyCode::Down, KeyModifiers::ALT));
+    assert_eq!(s.method, http::Method::POST);
+    step(&mut s, KeyEvent::new(KeyCode::Down, KeyModifiers::ALT));
+    assert_eq!(s.method, http::Method::PUT);
+    step(&mut s, KeyEvent::new(KeyCode::Up, KeyModifiers::ALT));
+    assert_eq!(s.method, http::Method::POST);
+}
+
+#[test]
+fn command_method_sets() {
+    let mut s = state();
+    step(&mut s, key(':'));
+    for c in "method DELETE".chars() {
+        step(&mut s, key(c));
+    }
+    step(&mut s, ev(KeyCode::Enter));
+    assert_eq!(s.method, http::Method::DELETE);
+}
+
+#[test]
 fn url_bar_typing_appends_to_buf_and_enter_jumps_to_request() {
     let mut s = state();
     while s.focus != Focus::Url {

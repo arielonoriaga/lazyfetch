@@ -27,6 +27,8 @@ pub enum Action {
     UrlChar(char),
     UrlBackspace,
     UrlSubmit,
+    MethodNext,
+    MethodPrev,
     NoOp,
 }
 
@@ -52,6 +54,8 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
             (KeyCode::Char('c'), KeyModifiers::CONTROL) => Action::Quit,
             (KeyCode::Tab, _) => Action::FocusNext,
             (KeyCode::BackTab, _) => Action::FocusPrev,
+            (KeyCode::Up, m) if m.contains(KeyModifiers::ALT) => Action::MethodPrev,
+            (KeyCode::Down, m) if m.contains(KeyModifiers::ALT) => Action::MethodNext,
             (KeyCode::Left, _) => Action::FocusDir(Dir::Left),
             (KeyCode::Right, _) => Action::FocusDir(Dir::Right),
             (KeyCode::Up, _) => Action::FocusDir(Dir::Up),
@@ -268,6 +272,16 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
             state.focus = Focus::Request;
             EnvDirty::No
         }
+        Action::MethodNext => {
+            state.method = next_method(&state.method);
+            state.toast = Some(format!("method: {}", state.method));
+            EnvDirty::No
+        }
+        Action::MethodPrev => {
+            state.method = prev_method(&state.method);
+            state.toast = Some(format!("method: {}", state.method));
+            EnvDirty::No
+        }
         Action::NoOp => EnvDirty::No,
     }
 }
@@ -288,10 +302,39 @@ fn run_command(state: &mut AppState, cmd: &str) -> EnvDirty {
         }
         return EnvDirty::No;
     }
+    if let Some(name) = cmd.strip_prefix("method ").map(str::trim) {
+        if let Ok(m) = name.to_ascii_uppercase().parse::<http::Method>() {
+            state.method = m;
+            state.toast = Some(format!("method: {}", state.method));
+        } else {
+            state.toast = Some(format!("invalid method: {}", name));
+        }
+        return EnvDirty::No;
+    }
     if cmd == "q" || cmd == "quit" {
         state.should_quit = true;
         return EnvDirty::No;
     }
     state.toast = Some(format!("unknown: {}", cmd));
     EnvDirty::No
+}
+
+const METHODS: &[&str] = &["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
+
+fn next_method(current: &http::Method) -> http::Method {
+    let i = METHODS
+        .iter()
+        .position(|m| *m == current.as_str())
+        .map(|i| (i + 1) % METHODS.len())
+        .unwrap_or(0);
+    METHODS[i].parse().unwrap()
+}
+
+fn prev_method(current: &http::Method) -> http::Method {
+    let i = METHODS
+        .iter()
+        .position(|m| *m == current.as_str())
+        .map(|i| (i + METHODS.len() - 1) % METHODS.len())
+        .unwrap_or(0);
+    METHODS[i].parse().unwrap()
 }
