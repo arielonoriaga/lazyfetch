@@ -30,6 +30,16 @@ pub enum Action {
     MethodNext,
     MethodPrev,
     SendRequest,
+    ResponseScroll(i32),
+    ResponseTop,
+    ResponseBottom,
+    EnterSearch,
+    SearchChar(char),
+    SearchBackspace,
+    SearchSubmit,
+    SearchCancel,
+    SearchNext,
+    SearchPrev,
     NoOp,
 }
 
@@ -44,6 +54,19 @@ pub fn dispatch(state: &AppState, ev: KeyEvent) -> Action {
         Mode::Normal => dispatch_normal(state, ev),
         Mode::Command => dispatch_command(ev),
         Mode::Insert => dispatch_insert(ev),
+        Mode::Search => dispatch_search(ev),
+    }
+}
+
+fn dispatch_search(ev: KeyEvent) -> Action {
+    match (ev.code, ev.modifiers) {
+        (KeyCode::Esc, _) => Action::SearchCancel,
+        (KeyCode::Enter, _) => Action::SearchSubmit,
+        (KeyCode::Backspace, _) => Action::SearchBackspace,
+        (KeyCode::Char(c), KeyModifiers::NONE) | (KeyCode::Char(c), KeyModifiers::SHIFT) => {
+            Action::SearchChar(c)
+        }
+        _ => Action::NoOp,
     }
 }
 
@@ -74,8 +97,31 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
         (KeyCode::BackTab, _) => Action::FocusPrev,
         (KeyCode::Char(':'), KeyModifiers::NONE) => Action::EnterCommand,
         (KeyCode::Char('?'), _) => Action::ToggleHelp,
-        (KeyCode::Char('s'), KeyModifiers::NONE) => Action::SendRequest,
         (KeyCode::Char('s'), KeyModifiers::CONTROL) => Action::SendRequest,
+        // Response pane keys (j/k scroll, /, n, N)
+        (KeyCode::Char('j'), KeyModifiers::NONE) if state.focus == Focus::Response => {
+            Action::ResponseScroll(1)
+        }
+        (KeyCode::Char('k'), KeyModifiers::NONE) if state.focus == Focus::Response => {
+            Action::ResponseScroll(-1)
+        }
+        (KeyCode::Char('d'), KeyModifiers::CONTROL) if state.focus == Focus::Response => {
+            Action::ResponseScroll(10)
+        }
+        (KeyCode::Char('u'), KeyModifiers::CONTROL) if state.focus == Focus::Response => {
+            Action::ResponseScroll(-10)
+        }
+        (KeyCode::Char('g'), KeyModifiers::NONE) if state.focus == Focus::Response => {
+            Action::ResponseTop
+        }
+        (KeyCode::Char('G'), _) if state.focus == Focus::Response => Action::ResponseBottom,
+        (KeyCode::Char('/'), _) if state.focus == Focus::Response => Action::EnterSearch,
+        (KeyCode::Char('n'), KeyModifiers::NONE) if state.focus == Focus::Response => {
+            Action::SearchNext
+        }
+        (KeyCode::Char('N'), _) if state.focus == Focus::Response => Action::SearchPrev,
+        // Send (after Response keys so 's' doesn't fire while focused there — actually allow s globally below)
+        (KeyCode::Char('s'), KeyModifiers::NONE) => Action::SendRequest,
         (KeyCode::Left, _) | (KeyCode::Char('h'), KeyModifiers::NONE) => {
             Action::FocusDir(Dir::Left)
         }
@@ -289,7 +335,96 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
         }
         Action::SendRequest => {
             // Sentinel — the event loop owns the tokio Handle and dispatches.
-            // We just signal intent here; loop checks it via the action enum.
+            EnvDirty::No
+        }
+        Action::ResponseScroll(delta) => {
+            if delta < 0 {
+                state.response_scroll = state.response_scroll.saturating_sub((-delta) as u16);
+            } else {
+                state.response_scroll = state.response_scroll.saturating_add(delta as u16);
+            }
+            EnvDirty::No
+        }
+        Action::ResponseTop => {
+            state.response_scroll = 0;
+            EnvDirty::No
+        }
+        Action::ResponseBottom => {
+            state.response_scroll = u16::MAX;
+            EnvDirty::No
+        }
+        Action::EnterSearch => {
+            state.mode = Mode::Search;
+            state.search_buf.clear();
+            EnvDirty::No
+        }
+        Action::SearchChar(c) => {
+            state.search_buf.push(c);
+            EnvDirty::No
+        }
+        Action::SearchBackspace => {
+            state.search_buf.pop();
+            EnvDirty::No
+        }
+        Action::SearchCancel => {
+            state.mode = Mode::Normal;
+            state.search_buf.clear();
+            state.search_active = None;
+            state.search_match_lines.clear();
+            state.search_match_idx = 0;
+            EnvDirty::No
+        }
+        Action::SearchSubmit => {
+            state.mode = Mode::Normal;
+            let needle = std::mem::take(&mut state.search_buf);
+            state.search_match_idx = 0;
+            state.search_match_lines.clear();
+            if needle.is_empty() {
+                state.search_active = None;
+            } else {
+                // Compute match line indices against the current rendered body (json or plain).
+                if let Some(executed) = &state.last_response {
+                    let ct = executed
+                        .response
+                        .headers
+                        .iter()
+                        .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+                        .map(|(_, v)| v.as_str())
+                        .unwrap_or("");
+                    let body = pretty_body_for_search(ct, &executed.response.body_bytes);
+                    let body = executed.secrets.redact(&body);
+                    let needle_lc = needle.to_lowercase();
+                    for (i, line) in body.lines().enumerate() {
+                        if line.to_lowercase().contains(&needle_lc) {
+                            // Body lines start at row 2 of the rendered Paragraph (status + blank).
+                            // The scroll counter is over the *body* so use raw `i`.
+                            state.search_match_lines.push(i);
+                        }
+                    }
+                    if let Some(&first) = state.search_match_lines.first() {
+                        state.response_scroll = first as u16;
+                    }
+                }
+                state.search_active = Some(needle);
+            }
+            EnvDirty::No
+        }
+        Action::SearchNext => {
+            if !state.search_match_lines.is_empty() {
+                state.search_match_idx =
+                    (state.search_match_idx + 1) % state.search_match_lines.len();
+                let target = state.search_match_lines[state.search_match_idx];
+                state.response_scroll = target as u16;
+            }
+            EnvDirty::No
+        }
+        Action::SearchPrev => {
+            if !state.search_match_lines.is_empty() {
+                let n = state.search_match_lines.len();
+                state.search_match_idx = (state.search_match_idx + n - 1) % n;
+                let target = state.search_match_lines[state.search_match_idx];
+                state.response_scroll = target as u16;
+            }
             EnvDirty::No
         }
         Action::NoOp => EnvDirty::No,
@@ -327,6 +462,24 @@ fn run_command(state: &mut AppState, cmd: &str) -> EnvDirty {
     }
     state.toast = Some(format!("unknown: {}", cmd));
     EnvDirty::No
+}
+
+/// Pretty-print body identically to layout::pretty_body so search line indices line up.
+fn pretty_body_for_search(content_type: &str, body: &[u8]) -> String {
+    let ct = content_type.to_ascii_lowercase();
+    if ct.contains("json") || looks_like_json(body) {
+        if let Ok(v) = serde_json::from_slice::<serde_json::Value>(body) {
+            if let Ok(pretty) = serde_json::to_string_pretty(&v) {
+                return pretty;
+            }
+        }
+    }
+    String::from_utf8_lossy(body).into_owned()
+}
+
+fn looks_like_json(body: &[u8]) -> bool {
+    let s = std::str::from_utf8(body).unwrap_or("").trim_start();
+    s.starts_with('{') || s.starts_with('[')
 }
 
 const METHODS: &[&str] = &["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];

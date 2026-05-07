@@ -1,4 +1,5 @@
 use crate::app::{AppState, Focus, InsertField, Mode};
+use crate::response as resp_render;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
@@ -45,6 +46,7 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     f.render_widget(toast, outer[1]);
 
     let status_text = match state.mode {
+        Mode::Search => format!("/{}", state.search_buf),
         Mode::Command => format!(":{}", state.command_buf),
         Mode::Insert => match state.insert_buf.as_ref() {
             Some(b) => {
@@ -80,6 +82,23 @@ pub fn draw(f: &mut Frame, state: &AppState) {
             }
             Focus::Url => {
                 "URL: type to edit · Backspace · Enter commit · arrows leave pane · ? help".into()
+            }
+            Focus::Response => {
+                let nav = if let Some(needle) = &state.search_active {
+                    format!(
+                        "Response: j/k scroll · /search ({}/{}: \"{}\") · n/N · Esc clear",
+                        if state.search_match_lines.is_empty() {
+                            0
+                        } else {
+                            state.search_match_idx + 1
+                        },
+                        state.search_match_lines.len(),
+                        needle
+                    )
+                } else {
+                    "Response: j/k · g/G · Ctrl-d/Ctrl-u · / search · ? help".into()
+                };
+                nav
             }
             _ => ":  Tab cycle  ?  help  q quit".into(),
         },
@@ -148,6 +167,14 @@ fn draw_help(f: &mut Frame) {
         row("s", "send current request (any pane)"),
         row("Enter", "send (when URL bar focused)"),
         row("Ctrl-s", "send (any pane)"),
+        Line::from(""),
+        section("Response pane"),
+        row("j / k", "scroll line"),
+        row("Ctrl-d / Ctrl-u", "scroll half page"),
+        row("g / G", "top / bottom"),
+        row("/", "search (vim-style)"),
+        row("n / N", "next / prev match"),
+        row("Esc", "clear search"),
         Line::from(""),
         section("URL bar"),
         row("type / Bksp", "edit URL inline"),
@@ -242,6 +269,11 @@ fn pane(f: &mut Frame, area: Rect, title: &str, my: Focus, state: &AppState) {
 }
 
 fn render_response(f: &mut Frame, area: Rect, state: &AppState) {
+    render_response_inner(f, area, state, true);
+}
+
+#[allow(clippy::too_many_lines)]
+fn render_response_inner(f: &mut Frame, area: Rect, state: &AppState, _focused: bool) {
     if state.inflight.is_some() {
         empty(f, area, "Sending…", &["press Ctrl-c to cancel"]);
         return;
@@ -290,31 +322,63 @@ fn render_response(f: &mut Frame, area: Rect, state: &AppState) {
 
     let kind_label = render_kind(content_type, &resp.body_bytes).unwrap_or("raw");
 
-    let mut lines: Vec<Line> = vec![Line::from(vec![
-        Span::styled(
-            format!("{} ", resp.status),
-            Style::default()
-                .fg(status_color)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            format!(
-                "· {}ms · {}B · {}",
-                resp.elapsed.as_millis(),
-                resp.size,
-                kind_label
+    // Header line: status + meta
+    let header: Vec<Line> = vec![
+        Line::from(vec![
+            Span::styled(
+                format!("{} ", resp.status),
+                Style::default()
+                    .fg(status_color)
+                    .add_modifier(Modifier::BOLD),
             ),
-            Style::default().fg(Color::DarkGray),
-        ),
-    ])];
-    lines.push(Line::from(""));
+            Span::styled(
+                format!(
+                    "· {}ms · {}B · {}",
+                    resp.elapsed.as_millis(),
+                    resp.size,
+                    kind_label
+                ),
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]),
+        Line::from(""),
+    ];
 
+    // Body: redact, pretty-print, colorize
     let body_text = pretty_body(content_type, &resp.body_bytes);
-    let body = executed.secrets.redact(&body_text);
-    let max = area.height.saturating_sub(3) as usize;
-    for line in body.lines().take(max) {
-        lines.push(Line::from(line.to_string()));
+    let body_text = executed.secrets.redact(&body_text);
+    let body_lines = if matches!(kind_label, "json") {
+        resp_render::colorize_json(&body_text)
+    } else {
+        resp_render::plain_lines(&body_text)
+    };
+
+    // Search highlight (if active)
+    let (highlighted, _hits) = match state.search_active.as_deref() {
+        Some(n) if !n.is_empty() => resp_render::apply_search_highlight(body_lines.clone(), n),
+        _ => (body_lines, vec![]),
+    };
+
+    // Stash matches into state via a side-channel: layout is &state only.
+    // We solve this by updating matches in the render lifecycle through the event loop;
+    // instead, recompute here and read from a simple cached method on AppState by passing
+    // matches through `state.search_match_lines` won't work since &state is shared.
+    // → Pragmatic: skip caching; n/N uses search_match_lines that was populated at submit time
+    //   if you searched again. We populate by scanning the rendered text on each submit instead.
+    // For now, leave as best-effort. (See keymap::Action::SearchSubmit.)
+
+    let total = highlighted.len() as u16;
+    let body_height = area.height.saturating_sub(2);
+    let max_scroll = total.saturating_sub(body_height);
+    let scroll = state.response_scroll.min(max_scroll);
+    let start = scroll as usize;
+    let end = (start + body_height as usize).min(highlighted.len());
+
+    let mut lines: Vec<Line> = header;
+    for spans in &highlighted[start..end] {
+        lines.push(Line::from(spans.clone()));
     }
+
     f.render_widget(
         Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false }),
         area,

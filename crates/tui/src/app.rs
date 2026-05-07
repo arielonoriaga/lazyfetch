@@ -11,6 +11,7 @@ pub enum Mode {
     Normal,
     Command,
     Insert,
+    Search,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,6 +116,11 @@ pub struct AppState {
     pub last_response: Option<Executed>,
     pub last_error: Option<String>,
     pub inflight: Option<Receiver<Result<Executed, ExecError>>>,
+    pub response_scroll: u16,
+    pub search_buf: String,
+    pub search_active: Option<String>,
+    pub search_match_lines: Vec<usize>,
+    pub search_match_idx: usize,
     pub should_quit: bool,
 }
 
@@ -137,6 +143,11 @@ impl AppState {
             last_response: None,
             last_error: None,
             inflight: None,
+            response_scroll: 0,
+            search_buf: String::new(),
+            search_active: None,
+            search_match_lines: vec![],
+            search_match_idx: 0,
             should_quit: false,
         }
     }
