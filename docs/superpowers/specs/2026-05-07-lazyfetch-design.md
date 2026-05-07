@@ -192,7 +192,7 @@ Writes use `tempfile + atomic rename`. External-edit detection via mtime check o
 ```
 ┌─ Collections ──┬─ Request ─────────────────────────────────┐
 │ ▸ my-api       │ [GET ▾] {{base}}/users/{{id}}             │
-│   ▾ users      │ ─ Params ─ Headers ─ Body ─ Auth ─ Tests ─│
+│   ▾ users      │ ─ Params ─ Headers ─ Body ─ Auth ─        │
 │     • list     │ key            value         [x]          │
 │     • get      │ ...                                       │
 │   ▾ auth       │                                           │
@@ -208,7 +208,7 @@ Writes use `tempfile + atomic rename`. External-edit detection via mtime check o
 
 - Left top: `Collections` (tree).
 - Left bottom: `Environment` (active env + var list).
-- Right top: `Request` (tabs: Params / Headers / Body / Auth / Tests-stub).
+- Right top: `Request` (tabs: Params / Headers / Body / Auth).
 - Right bottom: `Response` (tabs: Body / Headers / Cookies / Timing).
 
 ### State machine (top-level)
@@ -296,7 +296,7 @@ Path: `~/.local/share/lazyfetch/auth-cache/<coll>-<auth-hash>.json`. File perm 0
 
 ### Crate boundary
 
-`core::auth` defines `AuthSpec` + `AuthResolver` trait + `Token` types. `auth` crate provides `OAuth2Resolver` impl + `FsAuthCache` (or thin wrapper around `storage`). `core` stays IO-free.
+`core::auth` defines `AuthSpec` + `AuthResolver` trait + `Token` types. `auth` crate provides `OAuth2Resolver` impl + browser-launch + loopback callback server. `FsAuthCache` (token persistence adapter) lives in `storage` crate to keep all filesystem IO in one place. `core` stays IO-free.
 
 ---
 
