@@ -3,26 +3,26 @@ source: crates/tui/tests/layout_snapshot.rs
 expression: s
 ---
 ┌Collections───────────┐┌Request───────────────────────────────────────────────┐
-│                      ││(no request open)                                     │
+│No collections yet    ││No request open                                       │
 │                      ││                                                      │
+│Get started:          ││Pick one from Collections (Tab),                      │
+│  lazyfetch           ││or run from your shell:                               │
+│import-postman <file> ││                                                      │
+│  :new collection     ││  lazyfetch run <coll>/<request>                      │
+│<name>                ││                                                      │
 │                      ││                                                      │
-│                      ││                                                      │
-│                      ││                                                      │
-│                      ││                                                      │
-│                      ││                                                      │
-│                      ││                                                      │
-│                      ││                                                      │
-│                      ││                                                      │
-│                      │└──────────────────────────────────────────────────────┘
+│Files live in         ││                                                      │
+│  ~/.config/lazyfetch/││                                                      │
+│collections/          │└──────────────────────────────────────────────────────┘
 │                      │┌Response──────────────────────────────────────────────┐
-└──────────────────────┘│(no response yet)                                     │
+└──────────────────────┘│No response yet                                       │
 ┌Environment───────────┐│                                                      │
-│(no env)              ││                                                      │
+│No environment active ││Open a request, then press                            │
+│                      ││  s         send                                      │
+│Switch with           ││  /  f      search · jq filter                        │
+│  :env <name>         ││  S         save body / cURL                          │
 │                      ││                                                      │
-│                      ││                                                      │
-│                      ││                                                      │
-│                      ││                                                      │
-│                      ││                                                      │
-│                      ││                                                      │
+│Or create one in      ││                                                      │
+│  ~/.config/lazyfetch/││                                                      │
 └──────────────────────┘└──────────────────────────────────────────────────────┘
 :send  /search  e edit  s send  S save  ? help  q quit
