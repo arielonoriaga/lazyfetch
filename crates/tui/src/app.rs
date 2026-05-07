@@ -165,6 +165,7 @@ pub struct AppState {
     pub url_suggest_idx: usize,
     pub coll_cursor: usize,
     pub expanded_colls: std::collections::HashSet<ulid::Ulid>,
+    coll_rows_cache: std::cell::RefCell<Option<Vec<CollRow>>>,
     pub marked_requests: std::collections::HashSet<(usize, usize)>,
     pub move_buf: String,
     pub rename_target: Option<RenameTarget>,
@@ -214,6 +215,7 @@ impl AppState {
             url_suggest_idx: 0,
             coll_cursor: 0,
             expanded_colls: std::collections::HashSet::new(),
+            coll_rows_cache: std::cell::RefCell::new(None),
             marked_requests: std::collections::HashSet::new(),
             move_buf: String::new(),
             rename_target: None,
@@ -351,10 +353,19 @@ impl AppState {
         self.url_suggest_idx = 0;
     }
 
-    /// Flatten the Collections list into displayable rows. Top-level requests inside
-    /// each collection's `root` folder are shown when the collection is expanded.
-    /// Nested folders are TODO — for now we only walk the immediate `Item::Request`s.
+    /// Flatten the Collections list into displayable rows. Cached: invalidate via
+    /// `invalidate_coll_rows()` whenever `collections` or `expanded_colls` mutates.
+    /// Top-level requests only — nested folders are TODO.
     pub fn coll_rows(&self) -> Vec<CollRow> {
+        if let Some(cached) = self.coll_rows_cache.borrow().as_ref() {
+            return cached.clone();
+        }
+        let rows = self.compute_coll_rows();
+        *self.coll_rows_cache.borrow_mut() = Some(rows.clone());
+        rows
+    }
+
+    fn compute_coll_rows(&self) -> Vec<CollRow> {
         use lazyfetch_core::catalog::Item;
         let mut rows = vec![];
         for (ci, c) in self.collections.iter().enumerate() {
@@ -374,6 +385,11 @@ impl AppState {
         rows
     }
 
+    /// Invalidate the coll_rows cache. Call after every collections / expanded_colls write.
+    pub fn invalidate_coll_rows(&self) {
+        *self.coll_rows_cache.borrow_mut() = None;
+    }
+
     /// Toggle expansion for the collection currently under the cursor (no-op on a request row).
     pub fn coll_toggle_expand(&mut self) -> bool {
         let rows = self.coll_rows();
@@ -388,6 +404,7 @@ impl AppState {
                 } else {
                     self.expanded_colls.insert(id);
                 }
+                self.invalidate_coll_rows();
                 true
             }
             CollRow::Req { .. } => false,

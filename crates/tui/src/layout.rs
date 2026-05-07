@@ -884,104 +884,38 @@ fn draw_help(f: &mut Frame, state: &AppState) {
     f.render_widget(Clear, popup);
     f.render_widget(block, popup);
 
+    use crate::help::HelpEntry;
+
     let dim = Style::default().fg(Color::DarkGray);
     let kw = Style::default()
         .fg(Color::Yellow)
         .add_modifier(Modifier::BOLD);
-    let key = |k: &str| Span::styled(format!("{:<14}", k), kw);
-    let desc = |d: &str| Span::styled(d.to_string(), Style::default().fg(Color::Gray));
-    let section = |s: &str| {
-        Line::from(Span::styled(
-            s.to_string(),
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ))
-    };
-    let row = |k: &str, d: &str| Line::from(vec![Span::raw("  "), key(k), desc(d)]);
 
-    let all_lines: Vec<Line> = vec![
-        section("Global"),
-        row("1 2 3 4 5", "jump to pane (Coll · URL · Req · Resp · Env)"),
-        row("h j k l", "(arrows) — spatial pane move"),
-        row("Tab / S-Tab", "cycle pane focus"),
-        row("?", "toggle this help"),
-        row(":", "command mode"),
-        row("q  /  C-c", "quit"),
-        Line::from(""),
-        section("Send / save"),
-        row("F5", "send — works in any pane / mode (universal)"),
-        row("s", "send (any pane in Normal mode)"),
-        row("Enter", "send (when URL bar focused)"),
-        row("Ctrl-s", "send (any pane, any mode)"),
-        row("Ctrl-w", "save URL+method as request (popup, any pane)"),
-        row(":save api/users", "save URL+method as <coll>/<name>"),
-        row(":messages", "open scrollable history of all toasts"),
-        Line::from(""),
-        section("Response pane"),
-        row("j / k", "line up/down"),
-        row("h / l", "char left/right"),
-        row("0 / $", "line start / end"),
-        row("w / b", "word forward / back"),
-        row("Ctrl-d / Ctrl-u", "half page"),
-        row("Ctrl-f / Ctrl-b", "full page"),
-        row("gg / G", "top / bottom"),
-        row("{ / }", "prev / next blank line"),
-        row("H / M / L", "viewport top / mid / bottom"),
-        row("%", "matching brace { } [ ]"),
-        row("] / [", "next / prev sibling block"),
-        row("v", "toggle visual select"),
-        row("y", "yank selection (or line) → clipboard"),
-        row("/  n  N", "search · next · prev"),
-        row("Esc", "exit visual / clear search"),
-        Line::from(""),
-        section("URL bar"),
-        row("type / Bksp", "edit URL inline"),
-        row("Alt-↑ / Alt-↓", "cycle HTTP method"),
-        row(":method GET", "set method by name (any pane)"),
-        row("{{", "open variable suggestions"),
-        row("Tab / Enter", "accept selected variable"),
-        row("↑ / ↓", "navigate suggestions"),
-        Line::from(""),
-        section("Collections pane"),
-        row("j / k", "move row cursor"),
-        row("Space", "expand / collapse collection"),
-        row("r", "rename collection / request"),
-        row("x", "mark / unmark request for batch move"),
-        row("M", "move marked (or cursor) request → another collection"),
-        row(
-            "Enter",
-            "expand collection · open request (loads URL + method)",
-        ),
-        Line::from(""),
-        section("Env pane"),
-        row("j / k", "move row cursor"),
-        row("a", "add variable"),
-        row("A", "add secret variable"),
-        row("e", "edit selected row"),
-        row("d", "delete selected row"),
-        row("m", "toggle secret flag"),
-        row("r", "reveal / hide secret value"),
-        row(":env <name>", "switch active env"),
-        row(":newenv <name>", "create new env (becomes active)"),
-        Line::from(""),
-        section("Insert mode  (a / A)"),
-        row("Tab", "swap key ↔ value field"),
-        row("Enter", "commit, save to disk"),
-        row("Esc", "cancel"),
-        Line::from(""),
-        section("Command mode  (:)"),
-        row(":env <name>", "switch active environment"),
-        row(":q", "quit"),
-        row("Esc", "cancel"),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Type to filter · Backspace clears · Esc closes",
-            dim.add_modifier(Modifier::ITALIC),
-        )),
-    ];
+    // Build Lines from the static data table — single source of truth lives in `help.rs`.
+    let mut all_lines: Vec<Line> = crate::help::entries()
+        .iter()
+        .map(|e| match *e {
+            HelpEntry::Section(s) => Line::from(Span::styled(
+                s.to_string(),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            HelpEntry::Row { key, desc } => Line::from(vec![
+                Span::raw("  "),
+                Span::styled(format!("{:<14}", key), kw),
+                Span::styled(desc.to_string(), Style::default().fg(Color::Gray)),
+            ]),
+            HelpEntry::Blank => Line::from(""),
+        })
+        .collect();
+    all_lines.push(Line::from(""));
+    all_lines.push(Line::from(Span::styled(
+        "Type to filter · Backspace clears · Esc closes",
+        dim.add_modifier(Modifier::ITALIC),
+    )));
 
-    // Filter rows when help_filter is non-empty. Section headers and blank lines pass through.
+    // Filter rows when help_filter is non-empty. Section headers + blank lines pass through.
     let needle = state.help_filter.to_lowercase();
     let filtered: Vec<Line> = if needle.is_empty() {
         all_lines

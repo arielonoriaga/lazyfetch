@@ -90,6 +90,7 @@ pub fn run_save(state: &mut AppState, arg: &str) -> EnvDirty {
                 } else {
                     state.collections.push(c);
                 }
+                state.invalidate_coll_rows();
             }
         }
         Err(e) => state.notify(format!("save failed: {}", e)),
@@ -114,6 +115,7 @@ pub fn run_rename(state: &mut AppState, target: Option<RenameTarget>, new: &str)
                     if let Some(c) = state.collections.get_mut(idx) {
                         c.name = new.to_string();
                     }
+                    state.invalidate_coll_rows();
                     state.notify(format!("renamed {} → {}", old, new));
                 }
                 Err(e) => state.notify(format!("rename failed: {}", e)),
@@ -129,6 +131,7 @@ pub fn run_rename(state: &mut AppState, target: Option<RenameTarget>, new: &str)
                     if let Item::Request(r) = &mut state.collections[coll].root.items[item] {
                         r.name = new.to_string();
                     }
+                    state.invalidate_coll_rows();
                     state.notify(format!("renamed {} → {}", old, new));
                 }
                 Err(e) => state.notify(format!("rename failed: {}", e)),
@@ -178,6 +181,7 @@ pub fn run_move(state: &mut AppState, target: &str) {
             }
         }
     }
+    state.invalidate_coll_rows();
 
     state.marked_requests.clear();
     let msg = if errors == 0 {
