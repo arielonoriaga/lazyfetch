@@ -1,0 +1,29 @@
+---
+source: crates/tui/tests/layout_snapshot.rs
+assertion_line: 24
+expression: s
+---
+┌  1  Collections ─────┐┌  2  URL ─────────────────────────────────────────────┐
+│No collections yet    ││ GET     (press Tab here, then type your URL — e.g. {{│
+│                      │└──────────────────────────────────────────────────────┘
+│Get started:          │┌  3  Request ─────────────────────────────────────────┐
+│  Ctrl-w then type    ││No request open                                       │
+│api/health            ││                                                      │
+│  lazyfetch           ││Pick one from Collections (Tab),                      │
+│import-postman <file> ││or run from your shell:                               │
+│  lazyfetch           ││                                                      │
+│import-postman <file> ││  lazyfetch run <coll>/<request>                      │
+│--local               ││                                                      │
+│                      ││                                                      │
+└──────────────────────┘└──────────────────────────────────────────────────────┘
+┌  5  Environment ─────┐┌  4  Response ────────────────────────────────────────┐
+│No environments yet   ││No response yet                                       │
+│                      ││                                                      │
+│Press 'a' to add a    ││Press 's' (any pane) or Enter (URL bar)               │
+│variable              ││to send the current request.                          │
+│(creates a 'default'  ││                                                      │
+│env)                  ││                                                      │
+│                      ││                                                      │
+└──────────────────────┘└──────────────────────────────────────────────────────┘
+                                                                                
+ NORMAL  Collections: j/k · Space toggle · Enter open request · Ctrl-w save

@@ -65,6 +65,10 @@ pub enum Action {
     SearchCancel,
     SearchNext,
     SearchPrev,
+    CollCursorUp,
+    CollCursorDown,
+    CollToggle,
+    CollOpen,
     EnterSaveAs,
     SaveAsChar(char),
     SaveAsBackspace,
@@ -240,6 +244,7 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
         (KeyCode::Up, _) => Action::FocusDir(Dir::Up),
         (KeyCode::Down, _) => Action::FocusDir(Dir::Down),
         _ if state.focus == Focus::Env => dispatch_env(ev),
+        _ if state.focus == Focus::Collections => dispatch_collections(ev),
         _ => Action::NoOp,
     }
 }
@@ -251,6 +256,16 @@ fn dispatch_url(ev: KeyEvent) -> Action {
         (KeyCode::Char(c), KeyModifiers::NONE) | (KeyCode::Char(c), KeyModifiers::SHIFT) => {
             Action::UrlChar(c)
         }
+        _ => Action::NoOp,
+    }
+}
+
+fn dispatch_collections(ev: KeyEvent) -> Action {
+    match (ev.code, ev.modifiers) {
+        (KeyCode::Char('j'), _) => Action::CollCursorDown,
+        (KeyCode::Char('k'), _) => Action::CollCursorUp,
+        (KeyCode::Char(' '), _) => Action::CollToggle,
+        (KeyCode::Enter, _) => Action::CollOpen,
         _ => Action::NoOp,
     }
 }
@@ -764,6 +779,32 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
                 state.search_match_idx = (state.search_match_idx + n - 1) % n;
                 let target = state.search_match_lines[state.search_match_idx];
                 state.move_cursor_to(target);
+            }
+            EnvDirty::No
+        }
+        Action::CollCursorUp => {
+            state.coll_cursor = state.coll_cursor.saturating_sub(1);
+            EnvDirty::No
+        }
+        Action::CollCursorDown => {
+            let max = state.coll_rows().len();
+            if max > 0 && state.coll_cursor + 1 < max {
+                state.coll_cursor += 1;
+            }
+            EnvDirty::No
+        }
+        Action::CollToggle => {
+            state.coll_toggle_expand();
+            EnvDirty::No
+        }
+        Action::CollOpen => {
+            // Enter on a collection row toggles expand; on a request row loads URL+method.
+            if state.coll_toggle_expand() {
+                return EnvDirty::No;
+            }
+            if let Some(name) = state.coll_open_selected() {
+                state.toast = Some(format!("loaded {}", name));
+                state.focus = Focus::Url;
             }
             EnvDirty::No
         }

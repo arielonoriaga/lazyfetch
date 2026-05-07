@@ -1,4 +1,10 @@
 use lazyfetch_core::catalog::Collection;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CollRow {
+    Coll { idx: usize, expanded: bool },
+    Req { coll: usize, item: usize },
+}
 use lazyfetch_core::env::{Environment, VarValue};
 use lazyfetch_core::exec::{ExecError, Executed};
 use secrecy::{ExposeSecret, SecretString};
@@ -141,6 +147,8 @@ pub struct AppState {
     pub revealed_secrets: std::collections::HashSet<(ulid::Ulid, usize)>,
     pub save_buf: String,
     pub url_suggest_idx: usize,
+    pub coll_cursor: usize,
+    pub expanded_colls: std::collections::HashSet<ulid::Ulid>,
     pub pending_g: bool,
     pub visual_anchor: Option<(usize, usize)>,
     pub search_buf: String,
@@ -180,6 +188,8 @@ impl AppState {
             revealed_secrets: std::collections::HashSet::new(),
             save_buf: String::new(),
             url_suggest_idx: 0,
+            coll_cursor: 0,
+            expanded_colls: std::collections::HashSet::new(),
             pending_g: false,
             visual_anchor: None,
             search_buf: String::new(),
@@ -308,6 +318,69 @@ impl AppState {
         self.url_buf.push_str(chosen);
         self.url_buf.push_str("}}");
         self.url_suggest_idx = 0;
+    }
+
+    /// Flatten the Collections list into displayable rows. Top-level requests inside
+    /// each collection's `root` folder are shown when the collection is expanded.
+    /// Nested folders are TODO — for now we only walk the immediate `Item::Request`s.
+    pub fn coll_rows(&self) -> Vec<CollRow> {
+        use lazyfetch_core::catalog::Item;
+        let mut rows = vec![];
+        for (ci, c) in self.collections.iter().enumerate() {
+            rows.push(CollRow::Coll {
+                idx: ci,
+                expanded: self.expanded_colls.contains(&c.id),
+            });
+            if !self.expanded_colls.contains(&c.id) {
+                continue;
+            }
+            for (ri, item) in c.root.items.iter().enumerate() {
+                if let Item::Request(_) = item {
+                    rows.push(CollRow::Req { coll: ci, item: ri });
+                }
+            }
+        }
+        rows
+    }
+
+    /// Toggle expansion for the collection currently under the cursor (no-op on a request row).
+    pub fn coll_toggle_expand(&mut self) -> bool {
+        let rows = self.coll_rows();
+        let Some(row) = rows.get(self.coll_cursor) else {
+            return false;
+        };
+        match *row {
+            CollRow::Coll { idx, .. } => {
+                let id = self.collections[idx].id;
+                if self.expanded_colls.contains(&id) {
+                    self.expanded_colls.remove(&id);
+                } else {
+                    self.expanded_colls.insert(id);
+                }
+                true
+            }
+            CollRow::Req { .. } => false,
+        }
+    }
+
+    /// Load the request under the cursor into URL+method (returns true on success).
+    pub fn coll_open_selected(&mut self) -> Option<String> {
+        use lazyfetch_core::catalog::Item;
+        let rows = self.coll_rows();
+        let row = rows.get(self.coll_cursor).copied()?;
+        match row {
+            CollRow::Req { coll, item } => {
+                let r = match self.collections.get(coll)?.root.items.get(item)? {
+                    Item::Request(r) => r,
+                    _ => return None,
+                };
+                self.url_buf = r.url.0 .0.clone();
+                self.method = r.method.clone();
+                self.url_suggest_idx = 0;
+                Some(r.name.clone())
+            }
+            CollRow::Coll { .. } => None,
+        }
     }
 
     pub fn create_env(&mut self, name: &str) -> bool {

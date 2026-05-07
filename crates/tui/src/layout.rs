@@ -1,4 +1,4 @@
-use crate::app::{AppState, Focus, InsertField, Mode};
+use crate::app::{AppState, CollRow, Focus, InsertField, Mode};
 use crate::response as resp_render;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -114,6 +114,9 @@ pub fn draw(f: &mut Frame, state: &AppState) -> DrawInfo {
                     "Response: j/k · g/G · Ctrl-d/Ctrl-u · / search · ? help".into()
                 };
                 nav
+            }
+            Focus::Collections => {
+                "Collections: j/k · Space toggle · Enter open request · Ctrl-w save".into()
             }
             _ => ":  Tab cycle  ?  help  q quit".into(),
         },
@@ -613,6 +616,14 @@ fn draw_help(f: &mut Frame) {
         row("Tab / Enter", "accept selected variable"),
         row("↑ / ↓", "navigate suggestions"),
         Line::from(""),
+        section("Collections pane"),
+        row("j / k", "move row cursor"),
+        row("Space", "expand / collapse collection"),
+        row(
+            "Enter",
+            "expand collection · open request (loads URL + method)",
+        ),
+        Line::from(""),
         section("Env pane"),
         row("j / k", "move row cursor"),
         row("a", "add variable"),
@@ -652,29 +663,7 @@ fn pane(f: &mut Frame, area: Rect, title: &str, my: Focus, state: &AppState) {
 
     match my {
         Focus::Collections => {
-            if state.collections.is_empty() {
-                empty(
-                    f,
-                    inner,
-                    "No collections yet",
-                    &[
-                        "Get started:",
-                        "  lazyfetch import-postman <file>",
-                        "  lazyfetch import-postman <file> --local",
-                        "",
-                        "Files live in",
-                        "  .lazyfetch/collections/   (project)",
-                        "  ~/.config/lazyfetch/collections/   (global)",
-                    ],
-                );
-            } else {
-                let lines: Vec<Line> = state
-                    .collections
-                    .iter()
-                    .map(|c| Line::from(format!("▸ {}", c.name)))
-                    .collect();
-                f.render_widget(Paragraph::new(Text::from(lines)), inner);
-            }
+            render_collections(f, inner, state, state.focus == Focus::Collections)
         }
         Focus::Env => render_env(f, inner, state, state.focus == Focus::Env),
         Focus::Request => empty(
@@ -1109,6 +1098,106 @@ fn render_url_bar(f: &mut Frame, area: Rect, state: &AppState) {
         cursor,
     ]);
     f.render_widget(Paragraph::new(line), inner);
+}
+
+fn render_collections(f: &mut Frame, area: Rect, state: &AppState, focused: bool) {
+    use lazyfetch_core::catalog::Item;
+    if state.collections.is_empty() {
+        empty(
+            f,
+            area,
+            "No collections yet",
+            &[
+                "Get started:",
+                "  Ctrl-w then type api/health",
+                "  lazyfetch import-postman <file>",
+                "  lazyfetch import-postman <file> --local",
+                "",
+                "Files live in",
+                "  .lazyfetch/collections/   (project)",
+                "  ~/.config/lazyfetch/collections/   (global)",
+            ],
+        );
+        return;
+    }
+    let rows = state.coll_rows();
+    let lines: Vec<Line> = rows
+        .iter()
+        .enumerate()
+        .map(|(i, row)| {
+            let selected = focused && i == state.coll_cursor;
+            let cursor_mark = if selected { "▌ " } else { "  " };
+            let cursor_style = if selected {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            match *row {
+                CollRow::Coll { idx, expanded } => {
+                    let c = &state.collections[idx];
+                    let chevron = if expanded { "▾" } else { "▸" };
+                    let coll_count = c
+                        .root
+                        .items
+                        .iter()
+                        .filter(|i| matches!(i, Item::Request(_)))
+                        .count();
+                    Line::from(vec![
+                        Span::styled(cursor_mark.to_string(), cursor_style),
+                        Span::styled(
+                            format!("{} ", chevron),
+                            Style::default().fg(Color::DarkGray),
+                        ),
+                        Span::styled(
+                            c.name.clone(),
+                            Style::default()
+                                .fg(if selected { Color::Yellow } else { Color::Cyan })
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(
+                            format!(" ({})", coll_count),
+                            Style::default().fg(Color::DarkGray),
+                        ),
+                    ])
+                }
+                CollRow::Req { coll, item } => {
+                    let r = match &state.collections[coll].root.items[item] {
+                        Item::Request(r) => r,
+                        _ => return Line::from(""),
+                    };
+                    let m = r.method.as_str();
+                    let m_color = match m {
+                        "GET" => Color::Green,
+                        "POST" => Color::Yellow,
+                        "PUT" => Color::Cyan,
+                        "PATCH" => Color::Magenta,
+                        "DELETE" => Color::Red,
+                        _ => Color::Gray,
+                    };
+                    Line::from(vec![
+                        Span::styled(cursor_mark.to_string(), cursor_style),
+                        Span::raw("    "),
+                        Span::styled(
+                            format!("{:<6}", m),
+                            Style::default().fg(m_color).add_modifier(Modifier::BOLD),
+                        ),
+                        Span::raw(" "),
+                        Span::styled(
+                            r.name.clone(),
+                            Style::default().fg(if selected {
+                                Color::Yellow
+                            } else {
+                                Color::White
+                            }),
+                        ),
+                    ])
+                }
+            }
+        })
+        .collect();
+    f.render_widget(Paragraph::new(Text::from(lines)), area);
 }
 
 fn render_env(f: &mut Frame, area: Rect, state: &AppState, focused: bool) {
