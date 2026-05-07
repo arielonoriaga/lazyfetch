@@ -27,7 +27,8 @@ pub struct RunArgs {
 }
 
 pub async fn run(args: RunArgs) -> Result<()> {
-    let cfg = args.config_dir.unwrap_or_else(default_config_dir);
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let cfg = crate::resolve_config_dir(args.config_dir, &cwd);
     let segments: Vec<&str> = args.request_path.split('/').collect();
     if segments.len() < 2 {
         return Err(anyhow!(
@@ -139,10 +140,4 @@ fn find_request<'a>(folder: &'a Folder, path: &[&str]) -> Option<&'a Request> {
         }
     }
     None
-}
-
-fn default_config_dir() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("lazyfetch")
 }

@@ -78,11 +78,32 @@ lazyfetch run my-api/ping --config-dir ./fixtures
 ### Import from Postman
 
 ```bash
-lazyfetch import-postman ./postman_collection.json
-# → imported 'demo' (0 warnings)
+lazyfetch import-postman ./postman_collection.json            # → global ~/.config/lazyfetch
+lazyfetch import-postman ./postman_collection.json --local    # → project ./.lazyfetch
 ```
 
-Postman v2.1 collections become first-class YAML files under `~/.config/lazyfetch/collections/<name>/`. `git init` the directory and share with your team. No cloud, no account, no lock-in.
+Postman v2.1 collections become first-class YAML files. `git init` the directory and share with your team. No cloud, no account, no lock-in.
+
+### Project-local collections (`.lazyfetch/`)
+
+Drop a `.lazyfetch/` directory in your project (mirrors `.git/` semantics). lazyfetch walks up from your current working directory and uses the nearest match:
+
+```
+my-app/
+├── .git/
+├── .lazyfetch/                  ← discovered automatically
+│   ├── collections/
+│   │   └── api/
+│   │       ├── collection.yaml
+│   │       └── requests/
+│   │           └── health.yaml
+│   └── environments/
+│       ├── dev.yaml
+│       └── prod.yaml
+└── src/
+```
+
+Resolution: `--config-dir` flag → nearest `.lazyfetch/` ancestor → `~/.config/lazyfetch/`. Commit `.lazyfetch/` next to your code; every contributor gets the same requests + envs.
 
 ### Interactive TUI
 

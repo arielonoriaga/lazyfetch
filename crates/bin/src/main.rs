@@ -1,14 +1,10 @@
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
 
+mod config;
 mod import;
 mod run;
 
-pub fn default_config_dir() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("lazyfetch")
-}
+pub use config::resolve as resolve_config_dir;
 
 #[derive(Parser)]
 #[command(name = "lazyfetch", version, about = "Terminal HTTP client")]

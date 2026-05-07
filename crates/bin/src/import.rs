@@ -10,10 +10,23 @@ pub struct ImportArgs {
     pub file: PathBuf,
     #[arg(long)]
     pub config_dir: Option<PathBuf>,
+    /// Save into the project-local `.lazyfetch/` of the current directory
+    /// (creates it if absent). Ignored when `--config-dir` is set.
+    #[arg(long)]
+    pub local: bool,
 }
 
 pub fn run(args: ImportArgs) -> Result<()> {
-    let cfg = args.config_dir.unwrap_or_else(super::default_config_dir);
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let cfg = if args.config_dir.is_some() {
+        super::resolve_config_dir(args.config_dir, &cwd)
+    } else if args.local {
+        let p = cwd.join(".lazyfetch");
+        std::fs::create_dir_all(&p).with_context(|| format!("creating {:?}", p))?;
+        p
+    } else {
+        super::resolve_config_dir(None, &cwd)
+    };
     let json =
         std::fs::read_to_string(&args.file).with_context(|| format!("reading {:?}", args.file))?;
     let (coll, report) = postman::parse(&json).context("parsing Postman collection")?;
