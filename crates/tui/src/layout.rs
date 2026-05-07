@@ -1284,40 +1284,8 @@ fn human_bytes(n: u64) -> String {
     }
 }
 
-/// Returns a label describing how the body was rendered ("json", "raw"), or `None` if unknown.
-fn render_kind(content_type: &str, body: &[u8]) -> Option<&'static str> {
-    let ct = content_type.to_ascii_lowercase();
-    if ct.contains("json") || looks_like_json(body) {
-        Some("json")
-    } else if ct.contains("xml") || ct.contains("html") {
-        Some("xml/html")
-    } else if ct.starts_with("text/") {
-        Some("text")
-    } else if !body.is_empty() {
-        Some("raw")
-    } else {
-        None
-    }
-}
-
-fn looks_like_json(body: &[u8]) -> bool {
-    let s = std::str::from_utf8(body).unwrap_or("").trim_start();
-    s.starts_with('{') || s.starts_with('[')
-}
-
-/// JSON → 2-space pretty print via serde_json.
-/// Other content types → return as-is (UTF-8 lossy).
-fn pretty_body(content_type: &str, body: &[u8]) -> String {
-    let ct = content_type.to_ascii_lowercase();
-    if ct.contains("json") || looks_like_json(body) {
-        if let Ok(v) = serde_json::from_slice::<serde_json::Value>(body) {
-            if let Ok(pretty) = serde_json::to_string_pretty(&v) {
-                return pretty;
-            }
-        }
-    }
-    String::from_utf8_lossy(body).into_owned()
-}
+// pretty_body / looks_like_json / render_kind moved to crate::response — single source of truth.
+use crate::response::{pretty_body, render_kind};
 
 fn render_url_bar(f: &mut Frame, area: Rect, state: &AppState) {
     let focused = state.focus == Focus::Url;

@@ -602,17 +602,7 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
             state.pending_g = false;
             // Layout owns line content; we approximate via search index of blank lines
             // recomputed at search-submit and stored in `search_match_lines`. For paragraph
-            // motion we re-scan body lines lazily via the cached pretty body in last_response.
-            if let Some(executed) = &state.last_response {
-                let ct = executed
-                    .response
-                    .headers
-                    .iter()
-                    .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
-                    .map(|(_, v)| v.as_str())
-                    .unwrap_or("");
-                let body = pretty_body_for_search(ct, &executed.response.body_bytes);
-                let body = executed.secrets.redact(&body);
+            if let Some(body) = state.last_response_pretty.as_deref() {
                 let cur = state.response_cursor;
                 let target = body
                     .lines()
@@ -627,16 +617,7 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
         }
         Action::CursorParagraphPrev => {
             state.pending_g = false;
-            if let Some(executed) = &state.last_response {
-                let ct = executed
-                    .response
-                    .headers
-                    .iter()
-                    .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
-                    .map(|(_, v)| v.as_str())
-                    .unwrap_or("");
-                let body = pretty_body_for_search(ct, &executed.response.body_bytes);
-                let body = executed.secrets.redact(&body);
+            if let Some(body) = state.last_response_pretty.as_deref() {
                 let cur = state.response_cursor;
                 let collected: Vec<(usize, &str)> = body.lines().enumerate().take(cur).collect();
                 let target = collected
@@ -786,21 +767,10 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
                 state.search_active = None;
             } else {
                 // Compute match line indices against the current rendered body (json or plain).
-                if let Some(executed) = &state.last_response {
-                    let ct = executed
-                        .response
-                        .headers
-                        .iter()
-                        .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
-                        .map(|(_, v)| v.as_str())
-                        .unwrap_or("");
-                    let body = pretty_body_for_search(ct, &executed.response.body_bytes);
-                    let body = executed.secrets.redact(&body);
+                if let Some(body) = state.last_response_pretty.clone() {
                     let needle_lc = needle.to_lowercase();
                     for (i, line) in body.lines().enumerate() {
                         if line.to_lowercase().contains(&needle_lc) {
-                            // Body lines start at row 2 of the rendered Paragraph (status + blank).
-                            // The scroll counter is over the *body* so use raw `i`.
                             state.search_match_lines.push(i);
                         }
                     }
@@ -978,12 +948,11 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
                 return EnvDirty::No;
             }
             state.mode = Mode::SaveAs;
-            // Pre-fill with the last collection segment if any.
-            if state.save_buf.is_empty() {
-                if let Some(c) = state.collections.first() {
-                    state.save_buf = format!("{}/", c.name);
-                }
-            }
+            // Always re-prefill: stale buffer from a previous failed save shouldn't leak in.
+            state.save_buf = match state.collections.first() {
+                Some(c) => format!("{}/", c.name),
+                None => String::new(),
+            };
             EnvDirty::No
         }
         Action::SaveAsChar(c) => {
@@ -1239,16 +1208,7 @@ fn indent_of(line: &str) -> usize {
 }
 
 fn current_body(state: &AppState) -> Option<String> {
-    let executed = state.last_response.as_ref()?;
-    let ct = executed
-        .response
-        .headers
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
-        .map(|(_, v)| v.as_str())
-        .unwrap_or("");
-    let body = pretty_body_for_search(ct, &executed.response.body_bytes);
-    Some(executed.secrets.redact(&body))
+    state.last_response_pretty.clone()
 }
 
 fn first_non_space_col(state: &AppState) -> usize {
@@ -1427,24 +1387,6 @@ fn copy_to_clipboard(s: &str) -> Result<(), String> {
     Err(last_err)
 }
 
-/// Pretty-print body identically to layout::pretty_body so search line indices line up.
-fn pretty_body_for_search(content_type: &str, body: &[u8]) -> String {
-    let ct = content_type.to_ascii_lowercase();
-    if ct.contains("json") || looks_like_json(body) {
-        if let Ok(v) = serde_json::from_slice::<serde_json::Value>(body) {
-            if let Ok(pretty) = serde_json::to_string_pretty(&v) {
-                return pretty;
-            }
-        }
-    }
-    String::from_utf8_lossy(body).into_owned()
-}
-
-fn looks_like_json(body: &[u8]) -> bool {
-    let s = std::str::from_utf8(body).unwrap_or("").trim_start();
-    s.starts_with('{') || s.starts_with('[')
-}
-
 fn run_move(state: &mut AppState, target: &str) {
     use lazyfetch_core::catalog::Item;
     use lazyfetch_storage::collection::FsCollectionRepo;
@@ -1598,7 +1540,9 @@ fn next_method(current: &http::Method) -> http::Method {
         .position(|m| *m == current.as_str())
         .map(|i| (i + 1) % METHODS.len())
         .unwrap_or(0);
-    METHODS[i].parse().unwrap()
+    METHODS[i]
+        .parse()
+        .expect("METHODS table contains valid HTTP methods")
 }
 
 fn prev_method(current: &http::Method) -> http::Method {
@@ -1607,5 +1551,7 @@ fn prev_method(current: &http::Method) -> http::Method {
         .position(|m| *m == current.as_str())
         .map(|i| (i + METHODS.len() - 1) % METHODS.len())
         .unwrap_or(0);
-    METHODS[i].parse().unwrap()
+    METHODS[i]
+        .parse()
+        .expect("METHODS table contains valid HTTP methods")
 }

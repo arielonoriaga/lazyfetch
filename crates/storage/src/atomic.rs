@@ -2,6 +2,21 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
 
+/// Atomic write with secret-friendly permissions (0600 on Unix). Use this for any file
+/// that may end up holding secret material (env vars, OAuth2 tokens). On Windows the
+/// permission step is a no-op — relies on parent dir ACLs.
+pub fn write_atomic_secret(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    write_atomic(target, bytes)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perm = std::fs::metadata(target)?.permissions();
+        perm.set_mode(0o600);
+        std::fs::set_permissions(target, perm)?;
+    }
+    Ok(())
+}
+
 pub fn write_atomic(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let parent = target
         .parent()

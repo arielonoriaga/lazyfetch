@@ -1,4 +1,39 @@
-//! Response body rendering: JSON colorizer + plain text wrapper + search highlight.
+//! Response body rendering: detection, pretty-print, JSON colorizer, search highlight.
+
+/// Detect the rendered body kind for label display purposes only.
+pub fn render_kind(content_type: &str, body: &[u8]) -> Option<&'static str> {
+    let ct = content_type.to_ascii_lowercase();
+    if ct.contains("json") || looks_like_json(body) {
+        Some("json")
+    } else if ct.contains("xml") || ct.contains("html") {
+        Some("xml/html")
+    } else if ct.starts_with("text/") {
+        Some("text")
+    } else if !body.is_empty() {
+        Some("raw")
+    } else {
+        None
+    }
+}
+
+pub fn looks_like_json(body: &[u8]) -> bool {
+    let s = std::str::from_utf8(body).unwrap_or("").trim_start();
+    s.starts_with('{') || s.starts_with('[')
+}
+
+/// JSON → 2-space pretty print via serde_json. Other types → UTF-8 lossy as-is.
+/// Single source of truth; do not duplicate in keymap or event.
+pub fn pretty_body(content_type: &str, body: &[u8]) -> String {
+    let ct = content_type.to_ascii_lowercase();
+    if ct.contains("json") || looks_like_json(body) {
+        if let Ok(v) = serde_json::from_slice::<serde_json::Value>(body) {
+            if let Ok(pretty) = serde_json::to_string_pretty(&v) {
+                return pretty;
+            }
+        }
+    }
+    String::from_utf8_lossy(body).into_owned()
+}
 
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};

@@ -32,6 +32,18 @@ pub fn run(mut state: AppState, rt: Handle) -> anyhow::Result<()> {
                         executed.response.status,
                         executed.response.elapsed.as_millis()
                     ));
+                    // Cache the pretty-printed body once on receipt so layout / keymap /
+                    // mouse handlers don't re-parse the JSON on every event.
+                    let ct = executed
+                        .response
+                        .headers
+                        .iter()
+                        .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+                        .map(|(_, v)| v.as_str())
+                        .unwrap_or("");
+                    let pretty = crate::response::pretty_body(ct, &executed.response.body_bytes);
+                    let pretty = executed.secrets.redact(&pretty);
+                    state.last_response_pretty = Some(pretty);
                     state.last_response = Some(executed);
                     state.last_error = None;
                     state.inflight = None;
@@ -111,11 +123,12 @@ fn handle_mouse(state: &mut AppState, m: MouseEvent) {
                 state.focus = f;
             }
             // If clicking inside the response body, set cursor line + col.
-            if state.focus == Focus::Response && rect_contains(info.response_body_rect, x, y) {
+            if rect_contains(info.response_body_rect, x, y) {
                 let body = info.response_body_rect;
                 let row_in_body = (y - body.y) as usize;
                 let col_in_body = (x.saturating_sub(body.x)) as usize;
-                let target_line = state.response_scroll as usize + row_in_body;
+                let target_line = (state.response_scroll as usize + row_in_body)
+                    .min(state.response_total_lines.saturating_sub(1));
                 state.move_cursor_to(target_line);
                 let len = current_line_len(state);
                 let target_col = state.response_hscroll as usize + col_in_body;
@@ -133,36 +146,14 @@ fn handle_mouse(state: &mut AppState, m: MouseEvent) {
 }
 
 fn current_line_len(state: &AppState) -> usize {
-    let Some(executed) = &state.last_response else {
-        return 0;
-    };
-    let ct = executed
-        .response
-        .headers
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
-        .map(|(_, v)| v.as_str())
-        .unwrap_or("");
-    // Re-pretty-print is fine here — body is small relative to TUI tick.
-    let body = if ct.to_ascii_lowercase().contains("json")
-        || executed
-            .response
-            .body_bytes
-            .first()
-            .map(|b| matches!(b, b'{' | b'['))
-            .unwrap_or(false)
-    {
-        serde_json::from_slice::<serde_json::Value>(&executed.response.body_bytes)
-            .ok()
-            .and_then(|v| serde_json::to_string_pretty(&v).ok())
-            .unwrap_or_else(|| String::from_utf8_lossy(&executed.response.body_bytes).into_owned())
-    } else {
-        String::from_utf8_lossy(&executed.response.body_bytes).into_owned()
-    };
-    let body = executed.secrets.redact(&body);
-    body.lines()
-        .nth(state.response_cursor)
-        .map(|l| l.chars().count())
+    state
+        .last_response_pretty
+        .as_deref()
+        .and_then(|b| {
+            b.lines()
+                .nth(state.response_cursor)
+                .map(|l| l.chars().count())
+        })
         .unwrap_or(0)
 }
 

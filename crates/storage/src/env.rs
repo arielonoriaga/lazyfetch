@@ -1,4 +1,4 @@
-use crate::atomic::write_atomic;
+use crate::atomic::write_atomic_secret;
 use lazyfetch_core::env::{Environment, VarValue};
 use secrecy::{ExposeSecret, SecretString};
 use std::path::{Path, PathBuf};
@@ -45,7 +45,8 @@ impl FsEnvRepo {
                 .collect(),
         };
         let y = serde_yaml::to_string(&f).map_err(|e| std::io::Error::other(e.to_string()))?;
-        write_atomic(&self.root.join(format!("{}.yaml", e.name)), y.as_bytes())
+        // Env files may contain secret values → 0600 perms on Unix.
+        write_atomic_secret(&self.root.join(format!("{}.yaml", e.name)), y.as_bytes())
     }
 
     pub fn load_by_name(&self, name: &str) -> std::io::Result<Environment> {

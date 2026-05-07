@@ -1161,6 +1161,7 @@ dependencies = [
  "serde_yaml",
  "thiserror 1.0.69",
  "tokio",
+ "tracing",
  "ulid",
  "urlencoding",
 ]
@@ -1205,6 +1206,7 @@ dependencies = [
  "serde_yaml",
  "tempfile",
  "thiserror 1.0.69",
+ "tracing",
  "ulid",
 ]
 

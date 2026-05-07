@@ -17,6 +17,7 @@ chrono      = { workspace = true }
 blake3      = { workspace = true }
 fd-lock     = "4"
 tempfile    = "3"
+tracing     = { workspace = true }
 
 [dev-dependencies]
 http       = { workspace = true }

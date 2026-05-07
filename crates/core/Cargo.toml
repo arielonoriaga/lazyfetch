@@ -16,6 +16,7 @@ blake3      = { workspace = true }
 async-trait = "0.1"
 anyhow      = { workspace = true }
 urlencoding = "2"
+tracing     = { workspace = true }
 
 [dev-dependencies]
 proptest   = "1"

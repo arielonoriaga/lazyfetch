@@ -6,14 +6,14 @@ expression: s
 │No collections yet    ││ GET     (press Tab here, then type your URL — e.g. {{│
 │                      │└──────────────────────────────────────────────────────┘
 │Get started:          │┌  3  Request ─────────────────────────────────────────┐
-│  lazyfetch           ││No request open                                       │
-│import-postman <file> ││                                                      │
+│  Ctrl-w then type    ││No request open                                       │
+│api/health            ││                                                      │
 │  lazyfetch           ││Pick one from Collections (Tab),                      │
 │import-postman <file> ││or run from your shell:                               │
+│  lazyfetch           ││                                                      │
+│import-postman <file> ││  lazyfetch run <coll>/<request>                      │
 │--local               ││                                                      │
-│                      ││  lazyfetch run <coll>/<request>                      │
-│Files live in         ││                                                      │
-│  .lazyfetch/collectio││                                                      │
+│                      ││                                                      │
 └──────────────────────┘└──────────────────────────────────────────────────────┘
 ┌  5  Environment ─────┐┌  4  Response ────────────────────────────────────────┐
 │No environments yet   ││No response yet                                       │
@@ -25,4 +25,4 @@ expression: s
 │                      ││                                                      │
 └──────────────────────┘└──────────────────────────────────────────────────────┘
                                                                                 
- NORMAL  :  Tab cycle  ?  help  q quit
+ NORMAL  Collections: j/k · Space toggle · Enter open request · Ctrl-w save

@@ -68,6 +68,9 @@ impl FsCollectionRepo {
 
     /// Drop a single Request into `<root>/<coll>/requests/<name>.yaml`. Creates the
     /// collection scaffold (`collection.yaml`, `requests/_folder.yaml`) if absent.
+    /// Detects slug collisions: if a different request whose name slugs to the same
+    /// filename already lives there, the save is rejected so neither row is silently
+    /// overwritten.
     pub fn save_request(&self, coll_name: &str, req: &Request) -> std::io::Result<()> {
         let coll_dir = self.root.join(Self::slug(coll_name));
         let req_dir = coll_dir.join("requests");
@@ -95,11 +98,29 @@ impl FsCollectionRepo {
             crate::atomic::write_atomic(&folder_yaml, meta.as_bytes())?;
         }
         let path = req_dir.join(format!("{}.yaml", Self::slug(&req.name)));
+        if path.exists() {
+            // Same path may belong to the same request (overwrite ok) or to a
+            // different request whose name slugs identically (collision — refuse).
+            if let Ok(existing) = serde_yaml::from_str::<Request>(&std::fs::read_to_string(&path)?)
+            {
+                if existing.id != req.id && existing.name != req.name {
+                    return Err(std::io::Error::other(format!(
+                        "name collision: '{}' and '{}' map to the same file slug '{}'",
+                        existing.name,
+                        req.name,
+                        Self::slug(&req.name)
+                    )));
+                }
+            }
+        }
         let yaml = serde_yaml::to_string(req).map_err(io_err)?;
         crate::atomic::write_atomic(&path, yaml.as_bytes())
     }
 
-    /// Rename a collection on disk: rename the dir + rewrite `collection.yaml.name`.
+    /// Rename a collection on disk: rewrite `collection.yaml.name` first (atomic, in-place
+    /// on the old dir), then rename the dir. If the rewrite fails, the dir is untouched and
+    /// the operation is a no-op. If the dir-rename fails, the YAML still has the new name
+    /// but the dir name is the old slug — re-runnable, never silently corrupt.
     pub fn rename_collection(&self, old: &str, new: &str) -> std::io::Result<()> {
         if old == new {
             return Ok(());
@@ -118,8 +139,7 @@ impl FsCollectionRepo {
                 new
             )));
         }
-        std::fs::rename(&old_dir, &new_dir)?;
-        let yaml_path = new_dir.join("collection.yaml");
+        let yaml_path = old_dir.join("collection.yaml");
         if yaml_path.exists() {
             let mut header: CollectionHeader =
                 serde_yaml::from_str(&std::fs::read_to_string(&yaml_path)?).map_err(io_err)?;
@@ -127,11 +147,14 @@ impl FsCollectionRepo {
             let s = serde_yaml::to_string(&header).map_err(io_err)?;
             crate::atomic::write_atomic(&yaml_path, s.as_bytes())?;
         }
+        std::fs::rename(&old_dir, &new_dir)?;
         Ok(())
     }
 
     /// Move a request from one collection to another. Creates the destination collection
-    /// scaffold if needed. Refuses to overwrite an existing target file.
+    /// scaffold if needed. Refuses to overwrite an existing target file. Best-effort
+    /// cleanup: if target write succeeds but source remove fails, the duplicate is left
+    /// in place and the error is returned so the caller can surface it.
     pub fn move_request(&self, from_coll: &str, name: &str, to_coll: &str) -> std::io::Result<()> {
         if from_coll == to_coll {
             return Ok(());
@@ -144,11 +167,26 @@ impl FsCollectionRepo {
                 from_coll, name
             )));
         }
+        let to_dir = self.root.join(Self::slug(to_coll)).join("requests");
+        let to_path = to_dir.join(format!("{}.yaml", Self::slug(name)));
+        if to_path.exists() {
+            return Err(std::io::Error::other(format!(
+                "target already exists: {}/{}",
+                to_coll, name
+            )));
+        }
         let req: Request =
             serde_yaml::from_str(&std::fs::read_to_string(&from_path)?).map_err(io_err)?;
-        // save_request creates the destination scaffold + atomic-writes the file
         self.save_request(to_coll, &req)?;
-        std::fs::remove_file(&from_path)?;
+        if let Err(e) = std::fs::remove_file(&from_path) {
+            tracing::error!(
+                target: "lazyfetch::storage",
+                error = %e,
+                ?from_path,
+                "move_request: target written but source remove failed; duplicate left in place"
+            );
+            return Err(e);
+        }
         Ok(())
     }
 

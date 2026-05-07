@@ -82,6 +82,11 @@ pub enum ExecError {
     Send(#[from] SendError),
 }
 
+#[tracing::instrument(
+    target = "lazyfetch::exec",
+    skip_all,
+    fields(method = %req.method, name = %req.name)
+)]
 pub async fn execute(
     req: &Request,
     ctx: &ResolveCtx<'_>,
