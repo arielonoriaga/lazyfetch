@@ -150,6 +150,8 @@ pub struct AppState {
     pub method: http::Method,
     pub last_response: Option<Executed>,
     pub last_response_pretty: Option<String>,
+    /// Colorized body lines, computed once per response (or never if non-JSON).
+    pub last_response_lines: Option<Vec<Vec<ratatui::text::Span<'static>>>>,
     pub last_error: Option<String>,
     pub inflight: Option<Receiver<Result<Executed, ExecError>>>,
     pub response_scroll: u16,
@@ -200,6 +202,7 @@ impl AppState {
             method: http::Method::GET,
             last_response: None,
             last_response_pretty: None,
+            last_response_lines: None,
             last_error: None,
             inflight: None,
             response_scroll: 0,

@@ -43,7 +43,15 @@ pub fn run(mut state: AppState, rt: Handle) -> anyhow::Result<()> {
                         .unwrap_or("");
                     let pretty = crate::response::pretty_body(ct, &executed.response.body_bytes);
                     let pretty = executed.secrets.redact(&pretty);
+                    // Colorize once on receipt; render reads the cached spans every frame.
+                    let kind = crate::response::render_kind(ct, &executed.response.body_bytes);
+                    let lines = if matches!(kind, Some("json")) {
+                        crate::response::colorize_json(&pretty)
+                    } else {
+                        crate::response::plain_lines(&pretty)
+                    };
                     state.last_response_pretty = Some(pretty);
+                    state.last_response_lines = Some(lines);
                     state.last_response = Some(executed);
                     state.last_error = None;
                     state.inflight = None;

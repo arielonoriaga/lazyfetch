@@ -188,19 +188,11 @@ fn pane_response(f: &mut Frame, area: Rect, state: &AppState) -> (u16, u16, usiz
 }
 
 fn compute_total_lines(state: &AppState) -> usize {
-    let Some(executed) = &state.last_response else {
-        return 0;
-    };
-    let ct = executed
-        .response
-        .headers
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
-        .map(|(_, v)| v.as_str())
-        .unwrap_or("");
-    let body = pretty_body(ct, &executed.response.body_bytes);
-    let body = executed.secrets.redact(&body);
-    body.lines().count()
+    state
+        .last_response_pretty
+        .as_deref()
+        .map(|b| b.lines().count())
+        .unwrap_or(0)
 }
 
 fn draw_move_modal(f: &mut Frame, state: &AppState) {
@@ -1037,18 +1029,16 @@ fn render_response_inner(f: &mut Frame, area: Rect, state: &AppState) {
         Line::from(""),
     ];
 
-    // Body: redact, pretty-print, colorize
-    let body_text = pretty_body(content_type, &resp.body_bytes);
-    let body_text = executed.secrets.redact(&body_text);
-    let body_lines = if matches!(kind_label, "json") {
-        resp_render::colorize_json(&body_text)
-    } else {
-        resp_render::plain_lines(&body_text)
-    };
+    // Body lines are computed once on response receipt and cached on AppState.
+    // We avoid re-pretty-printing + re-colorizing every frame.
+    let body_lines: Vec<Vec<Span<'static>>> = state
+        .last_response_lines
+        .clone()
+        .unwrap_or_else(|| resp_render::plain_lines(""));
 
-    // Search highlight (if active)
+    // Search highlight (if active) — only mutate the cached lines when needed.
     let (mut highlighted, _hits) = match state.search_active.as_deref() {
-        Some(n) if !n.is_empty() => resp_render::apply_search_highlight(body_lines.clone(), n),
+        Some(n) if !n.is_empty() => resp_render::apply_search_highlight(body_lines, n),
         _ => (body_lines, vec![]),
     };
 
@@ -1301,7 +1291,7 @@ fn human_bytes(n: u64) -> String {
 }
 
 // pretty_body / looks_like_json / render_kind moved to crate::response — single source of truth.
-use crate::response::{pretty_body, render_kind};
+use crate::response::render_kind;
 
 fn render_url_bar(f: &mut Frame, area: Rect, state: &AppState) {
     let focused = state.focus == Focus::Url;

@@ -8,8 +8,9 @@
 
 use crate::app::AppState;
 
-pub fn current_body(state: &AppState) -> Option<String> {
-    state.last_response_pretty.clone()
+/// Borrow the cached pretty-printed body. Returns `None` if no response yet.
+pub fn current_body(state: &AppState) -> Option<&str> {
+    state.last_response_pretty.as_deref()
 }
 
 pub fn first_non_space_col(state: &AppState) -> usize {

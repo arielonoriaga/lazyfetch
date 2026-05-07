@@ -783,16 +783,22 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
                 state.search_active = None;
             } else {
                 // Compute match line indices against the current rendered body (json or plain).
-                if let Some(body) = state.last_response_pretty.clone() {
-                    let needle_lc = needle.to_lowercase();
-                    for (i, line) in body.lines().enumerate() {
-                        if line.to_lowercase().contains(&needle_lc) {
-                            state.search_match_lines.push(i);
-                        }
-                    }
-                    if let Some(&first) = state.search_match_lines.first() {
-                        state.move_cursor_to(first);
-                    }
+                // Borrow the cached body — no clone of the whole string.
+                let needle_lc = needle.to_lowercase();
+                let matches: Vec<usize> = state
+                    .last_response_pretty
+                    .as_deref()
+                    .map(|b| {
+                        b.lines()
+                            .enumerate()
+                            .filter(|(_, l)| l.to_lowercase().contains(&needle_lc))
+                            .map(|(i, _)| i)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                state.search_match_lines = matches;
+                if let Some(&first) = state.search_match_lines.first() {
+                    state.move_cursor_to(first);
                 }
                 state.search_active = Some(needle);
             }
