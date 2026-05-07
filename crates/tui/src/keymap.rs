@@ -69,6 +69,13 @@ pub enum Action {
     CollCursorDown,
     CollToggle,
     CollOpen,
+    CollRenameStart,
+    RenameChar(char),
+    RenameBackspace,
+    RenameSubmit,
+    RenameCancel,
+    HelpFilterChar(char),
+    HelpFilterBackspace,
     EnterSaveAs,
     SaveAsChar(char),
     SaveAsBackspace,
@@ -81,7 +88,12 @@ pub fn dispatch(state: &AppState, ev: KeyEvent) -> Action {
     if state.help_open {
         return match (ev.code, ev.modifiers) {
             (KeyCode::Char('c'), KeyModifiers::CONTROL) => Action::Quit,
-            _ => Action::CloseHelp,
+            (KeyCode::Esc, _) | (KeyCode::Char('?'), _) => Action::CloseHelp,
+            (KeyCode::Backspace, _) => Action::HelpFilterBackspace,
+            (KeyCode::Char(c), KeyModifiers::NONE) | (KeyCode::Char(c), KeyModifiers::SHIFT) => {
+                Action::HelpFilterChar(c)
+            }
+            _ => Action::NoOp,
         };
     }
     match state.mode {
@@ -90,6 +102,19 @@ pub fn dispatch(state: &AppState, ev: KeyEvent) -> Action {
         Mode::Insert => dispatch_insert(ev),
         Mode::Search => dispatch_search(ev),
         Mode::SaveAs => dispatch_save_as(ev),
+        Mode::Rename => dispatch_rename(ev),
+    }
+}
+
+fn dispatch_rename(ev: KeyEvent) -> Action {
+    match (ev.code, ev.modifiers) {
+        (KeyCode::Esc, _) => Action::RenameCancel,
+        (KeyCode::Enter, _) => Action::RenameSubmit,
+        (KeyCode::Backspace, _) => Action::RenameBackspace,
+        (KeyCode::Char(c), KeyModifiers::NONE) | (KeyCode::Char(c), KeyModifiers::SHIFT) => {
+            Action::RenameChar(c)
+        }
+        _ => Action::NoOp,
     }
 }
 
@@ -266,6 +291,7 @@ fn dispatch_collections(ev: KeyEvent) -> Action {
         (KeyCode::Char('k'), _) => Action::CollCursorUp,
         (KeyCode::Char(' '), _) => Action::CollToggle,
         (KeyCode::Enter, _) => Action::CollOpen,
+        (KeyCode::Char('r'), _) => Action::CollRenameStart,
         _ => Action::NoOp,
     }
 }
@@ -466,6 +492,7 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
         }
         Action::CloseHelp => {
             state.help_open = false;
+            state.help_filter.clear();
             EnvDirty::No
         }
         Action::UrlChar(c) => {
@@ -798,7 +825,6 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
             EnvDirty::No
         }
         Action::CollOpen => {
-            // Enter on a collection row toggles expand; on a request row loads URL+method.
             if state.coll_toggle_expand() {
                 return EnvDirty::No;
             }
@@ -806,6 +832,72 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
                 state.toast = Some(format!("loaded {}", name));
                 state.focus = Focus::Url;
             }
+            EnvDirty::No
+        }
+        Action::CollRenameStart => {
+            use crate::app::{CollRow, RenameTarget};
+            let rows = state.coll_rows();
+            if let Some(row) = rows.get(state.coll_cursor).copied() {
+                let target = match row {
+                    CollRow::Coll { idx, .. } => {
+                        let name = state.collections[idx].name.clone();
+                        Some(RenameTarget::Collection {
+                            idx,
+                            old: name.clone(),
+                        })
+                    }
+                    CollRow::Req { coll, item } => {
+                        if let lazyfetch_core::catalog::Item::Request(r) =
+                            &state.collections[coll].root.items[item]
+                        {
+                            Some(RenameTarget::Request {
+                                coll,
+                                item,
+                                old: r.name.clone(),
+                            })
+                        } else {
+                            None
+                        }
+                    }
+                };
+                if let Some(t) = target {
+                    state.rename_buf = match &t {
+                        RenameTarget::Collection { old, .. }
+                        | RenameTarget::Request { old, .. } => old.clone(),
+                    };
+                    state.rename_target = Some(t);
+                    state.mode = Mode::Rename;
+                }
+            }
+            EnvDirty::No
+        }
+        Action::RenameChar(c) => {
+            state.rename_buf.push(c);
+            EnvDirty::No
+        }
+        Action::RenameBackspace => {
+            state.rename_buf.pop();
+            EnvDirty::No
+        }
+        Action::RenameCancel => {
+            state.mode = Mode::Normal;
+            state.rename_target = None;
+            state.rename_buf.clear();
+            EnvDirty::No
+        }
+        Action::RenameSubmit => {
+            let new = std::mem::take(&mut state.rename_buf);
+            let target = state.rename_target.take();
+            state.mode = Mode::Normal;
+            run_rename(state, target, new.trim());
+            EnvDirty::No
+        }
+        Action::HelpFilterChar(c) => {
+            state.help_filter.push(c);
+            EnvDirty::No
+        }
+        Action::HelpFilterBackspace => {
+            state.help_filter.pop();
             EnvDirty::No
         }
         Action::EnterSaveAs => {
@@ -1279,6 +1371,50 @@ fn pretty_body_for_search(content_type: &str, body: &[u8]) -> String {
 fn looks_like_json(body: &[u8]) -> bool {
     let s = std::str::from_utf8(body).unwrap_or("").trim_start();
     s.starts_with('{') || s.starts_with('[')
+}
+
+fn run_rename(state: &mut AppState, target: Option<crate::app::RenameTarget>, new: &str) {
+    use crate::app::RenameTarget;
+    use lazyfetch_storage::collection::FsCollectionRepo;
+    let Some(target) = target else { return };
+    if new.is_empty() {
+        state.toast = Some("name is empty".into());
+        return;
+    }
+    let repo = FsCollectionRepo::new(state.config_dir.join("collections"));
+    match target {
+        RenameTarget::Collection { idx, old } => {
+            if old == new {
+                return;
+            }
+            match repo.rename_collection(&old, new) {
+                Ok(()) => {
+                    if let Some(c) = state.collections.get_mut(idx) {
+                        c.name = new.to_string();
+                    }
+                    state.toast = Some(format!("renamed {} → {}", old, new));
+                }
+                Err(e) => state.toast = Some(format!("rename failed: {}", e)),
+            }
+        }
+        RenameTarget::Request { coll, item, old } => {
+            if old == new {
+                return;
+            }
+            let coll_name = state.collections[coll].name.clone();
+            match repo.rename_request(&coll_name, &old, new) {
+                Ok(()) => {
+                    if let lazyfetch_core::catalog::Item::Request(r) =
+                        &mut state.collections[coll].root.items[item]
+                    {
+                        r.name = new.to_string();
+                    }
+                    state.toast = Some(format!("renamed {} → {}", old, new));
+                }
+                Err(e) => state.toast = Some(format!("rename failed: {}", e)),
+            }
+        }
+    }
 }
 
 fn run_save(state: &mut AppState, arg: &str) -> EnvDirty {

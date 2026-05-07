@@ -99,6 +99,61 @@ impl FsCollectionRepo {
         crate::atomic::write_atomic(&path, yaml.as_bytes())
     }
 
+    /// Rename a collection on disk: rename the dir + rewrite `collection.yaml.name`.
+    pub fn rename_collection(&self, old: &str, new: &str) -> std::io::Result<()> {
+        if old == new {
+            return Ok(());
+        }
+        let old_dir = self.root.join(Self::slug(old));
+        let new_dir = self.root.join(Self::slug(new));
+        if !old_dir.is_dir() {
+            return Err(std::io::Error::other(format!(
+                "collection not found: {}",
+                old
+            )));
+        }
+        if new_dir.exists() {
+            return Err(std::io::Error::other(format!(
+                "collection already exists: {}",
+                new
+            )));
+        }
+        std::fs::rename(&old_dir, &new_dir)?;
+        let yaml_path = new_dir.join("collection.yaml");
+        if yaml_path.exists() {
+            let mut header: CollectionHeader =
+                serde_yaml::from_str(&std::fs::read_to_string(&yaml_path)?).map_err(io_err)?;
+            header.name = new.to_string();
+            let s = serde_yaml::to_string(&header).map_err(io_err)?;
+            crate::atomic::write_atomic(&yaml_path, s.as_bytes())?;
+        }
+        Ok(())
+    }
+
+    /// Rename a request inside a collection.
+    pub fn rename_request(&self, coll_name: &str, old: &str, new: &str) -> std::io::Result<()> {
+        if old == new {
+            return Ok(());
+        }
+        let coll_dir = self.root.join(Self::slug(coll_name));
+        let req_dir = coll_dir.join("requests");
+        let old_path = req_dir.join(format!("{}.yaml", Self::slug(old)));
+        let new_path = req_dir.join(format!("{}.yaml", Self::slug(new)));
+        if !old_path.is_file() {
+            return Err(std::io::Error::other(format!("request not found: {}", old)));
+        }
+        if new_path.exists() {
+            return Err(std::io::Error::other(format!("request exists: {}", new)));
+        }
+        let mut req: Request =
+            serde_yaml::from_str(&std::fs::read_to_string(&old_path)?).map_err(io_err)?;
+        req.name = new.to_string();
+        let yaml = serde_yaml::to_string(&req).map_err(io_err)?;
+        crate::atomic::write_atomic(&new_path, yaml.as_bytes())?;
+        std::fs::remove_file(&old_path)?;
+        Ok(())
+    }
+
     pub fn load_by_name(&self, name: &str) -> std::io::Result<Collection> {
         let dir = self.root.join(Self::slug(name));
         let header: CollectionHeader =

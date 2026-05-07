@@ -5,6 +5,19 @@ pub enum CollRow {
     Coll { idx: usize, expanded: bool },
     Req { coll: usize, item: usize },
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RenameTarget {
+    Collection {
+        idx: usize,
+        old: String,
+    },
+    Request {
+        coll: usize,
+        item: usize,
+        old: String,
+    },
+}
 use lazyfetch_core::env::{Environment, VarValue};
 use lazyfetch_core::exec::{ExecError, Executed};
 use secrecy::{ExposeSecret, SecretString};
@@ -19,6 +32,7 @@ pub enum Mode {
     Insert,
     Search,
     SaveAs,
+    Rename,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -149,6 +163,9 @@ pub struct AppState {
     pub url_suggest_idx: usize,
     pub coll_cursor: usize,
     pub expanded_colls: std::collections::HashSet<ulid::Ulid>,
+    pub rename_target: Option<RenameTarget>,
+    pub rename_buf: String,
+    pub help_filter: String,
     pub pending_g: bool,
     pub visual_anchor: Option<(usize, usize)>,
     pub search_buf: String,
@@ -190,6 +207,9 @@ impl AppState {
             url_suggest_idx: 0,
             coll_cursor: 0,
             expanded_colls: std::collections::HashSet::new(),
+            rename_target: None,
+            rename_buf: String::new(),
+            help_filter: String::new(),
             pending_g: false,
             visual_anchor: None,
             search_buf: String::new(),

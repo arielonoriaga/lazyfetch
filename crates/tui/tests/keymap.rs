@@ -205,7 +205,8 @@ fn help_toggles_on_question_mark() {
     let mut s = state();
     step(&mut s, key('?'));
     assert!(s.help_open);
-    step(&mut s, key('x'));
+    // 'x' now filters; close requires Esc or '?'.
+    step(&mut s, key('?'));
     assert!(!s.help_open);
 }
 

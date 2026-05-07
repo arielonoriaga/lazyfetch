@@ -72,6 +72,7 @@ pub fn draw(f: &mut Frame, state: &AppState) -> DrawInfo {
         Mode::Command => ("COMMAND ", Color::Black, Color::Magenta),
         Mode::Search => (" SEARCH ", Color::Black, Color::Yellow),
         Mode::SaveAs => (" SAVE ", Color::Black, Color::Yellow),
+        Mode::Rename => ("RENAME ", Color::Black, Color::Magenta),
     };
     let mode_span = Span::styled(
         mode_label.to_string(),
@@ -86,6 +87,7 @@ pub fn draw(f: &mut Frame, state: &AppState) -> DrawInfo {
         Mode::Command => format!(":{}", state.command_buf),
         Mode::Insert => "(insert popup — Tab swap · Enter save · Esc cancel)".into(),
         Mode::SaveAs => format!("Save as: {}", state.save_buf),
+        Mode::Rename => format!("Rename to: {}", state.rename_buf),
         Mode::Normal => match state.focus {
             Focus::Env => {
                 "Env: j/k · a add · A add-sec · e edit · d del · m sec · r reveal · :env / :newenv"
@@ -135,11 +137,14 @@ pub fn draw(f: &mut Frame, state: &AppState) -> DrawInfo {
     if state.mode == Mode::SaveAs {
         draw_save_modal(f, state);
     }
+    if state.mode == Mode::Rename {
+        draw_rename_modal(f, state);
+    }
     if state.focus == Focus::Url {
         draw_url_suggestions(f, url_rect, state);
     }
     if state.help_open {
-        draw_help(f);
+        draw_help(f, state);
     }
 
     DrawInfo {
@@ -188,6 +193,108 @@ fn compute_total_lines(state: &AppState) -> usize {
     let body = pretty_body(ct, &executed.response.body_bytes);
     let body = executed.secrets.redact(&body);
     body.lines().count()
+}
+
+fn draw_rename_modal(f: &mut Frame, state: &AppState) {
+    use crate::app::RenameTarget;
+    use ratatui::widgets::Clear;
+    let Some(target) = state.rename_target.as_ref() else {
+        return;
+    };
+    let (kind, old) = match target {
+        RenameTarget::Collection { old, .. } => ("collection", old.as_str()),
+        RenameTarget::Request { old, .. } => ("request", old.as_str()),
+    };
+    let area = f.area();
+    let w = area.width.min(60);
+    let h = 9u16.min(area.height);
+    let x = area.x + (area.width.saturating_sub(w)) / 2;
+    let y = area.y + (area.height.saturating_sub(h)) / 3;
+    let popup = Rect {
+        x,
+        y,
+        width: w,
+        height: h,
+    };
+    let title = Line::from(vec![
+        Span::styled(
+            format!(" Rename {} ", kind),
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!(" {} ", old),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Plain)
+        .border_style(
+            Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
+        )
+        .title(title);
+    let inner = block.inner(popup);
+    f.render_widget(Clear, popup);
+    f.render_widget(block, popup);
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+    let label = Line::from(Span::styled(" New name", Style::default().fg(Color::Gray)));
+    let input = Line::from(vec![
+        Span::styled(
+            "▌ ",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            state.rename_buf.clone(),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            "▏",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::SLOW_BLINK),
+        ),
+    ]);
+    let footer = Line::from(vec![
+        Span::styled(
+            " Enter ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" rename  ", Style::default().fg(Color::Gray)),
+        Span::styled(
+            " Esc ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Red)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" cancel", Style::default().fg(Color::Gray)),
+    ]);
+    f.render_widget(Paragraph::new(label), rows[0]);
+    f.render_widget(Paragraph::new(input), rows[2]);
+    f.render_widget(Paragraph::new(footer), rows[4]);
 }
 
 fn draw_url_suggestions(f: &mut Frame, url_rect: Rect, state: &AppState) {
@@ -531,12 +638,12 @@ fn draw_env_var_modal(f: &mut Frame, state: &AppState) {
     f.render_widget(Paragraph::new(footer), rows[5]);
 }
 
-fn draw_help(f: &mut Frame) {
+fn draw_help(f: &mut Frame, state: &AppState) {
     use ratatui::widgets::Clear;
 
     let area = f.area();
-    let w = area.width.min(72);
-    let h = area.height.min(28);
+    let w = area.width.min(78);
+    let h = area.height.min(30);
     let x = area.x + (area.width.saturating_sub(w)) / 2;
     let y = area.y + (area.height.saturating_sub(h)) / 2;
     let popup = Rect {
@@ -546,9 +653,35 @@ fn draw_help(f: &mut Frame) {
         height: h,
     };
 
+    let title = if state.help_filter.is_empty() {
+        Line::from(Span::styled(
+            " Help — keyboard shortcuts (type to filter, Esc closes) ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ))
+    } else {
+        Line::from(vec![
+            Span::styled(
+                " Help ",
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!(" filter: {}▏ ", state.help_filter),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ])
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(" Help — keyboard shortcuts ")
+        .title(title)
         .border_style(
             Style::default()
                 .fg(Color::Yellow)
@@ -574,7 +707,7 @@ fn draw_help(f: &mut Frame) {
     };
     let row = |k: &str, d: &str| Line::from(vec![Span::raw("  "), key(k), desc(d)]);
 
-    let lines: Vec<Line> = vec![
+    let all_lines: Vec<Line> = vec![
         section("Global"),
         row("1 2 3 4 5", "jump to pane (Coll · URL · Req · Resp · Env)"),
         row("h j k l", "(arrows) — spatial pane move"),
@@ -619,6 +752,7 @@ fn draw_help(f: &mut Frame) {
         section("Collections pane"),
         row("j / k", "move row cursor"),
         row("Space", "expand / collapse collection"),
+        row("r", "rename collection / request"),
         row(
             "Enter",
             "expand collection · open request (loads URL + method)",
@@ -646,12 +780,31 @@ fn draw_help(f: &mut Frame) {
         row("Esc", "cancel"),
         Line::from(""),
         Line::from(Span::styled(
-            "Press any key to close",
+            "Type to filter · Backspace clears · Esc closes",
             dim.add_modifier(Modifier::ITALIC),
         )),
     ];
+
+    // Filter rows when help_filter is non-empty. Section headers and blank lines pass through.
+    let needle = state.help_filter.to_lowercase();
+    let filtered: Vec<Line> = if needle.is_empty() {
+        all_lines
+    } else {
+        all_lines
+            .into_iter()
+            .filter(|line| {
+                let text: String = line
+                    .spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>();
+                text.is_empty() || text.to_lowercase().contains(&needle)
+            })
+            .collect()
+    };
+
     f.render_widget(
-        Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false }),
+        Paragraph::new(Text::from(filtered)).wrap(Wrap { trim: false }),
         inner,
     );
 }
