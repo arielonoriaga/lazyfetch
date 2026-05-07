@@ -11,8 +11,10 @@ pub enum Action {
     EnvCursorUp,
     EnvCursorDown,
     EnvAdd { secret: bool },
+    EnvEdit,
     EnvDelete,
     EnvToggleSecret,
+    EnvToggleReveal,
     EnterCommand,
     CommandChar(char),
     CommandBackspace,
@@ -229,8 +231,10 @@ fn dispatch_env(ev: KeyEvent) -> Action {
         (KeyCode::Char('k'), _) => Action::EnvCursorUp,
         (KeyCode::Char('a'), KeyModifiers::NONE) => Action::EnvAdd { secret: false },
         (KeyCode::Char('A'), _) => Action::EnvAdd { secret: true },
+        (KeyCode::Char('e'), KeyModifiers::NONE) => Action::EnvEdit,
         (KeyCode::Char('d'), KeyModifiers::NONE) => Action::EnvDelete,
         (KeyCode::Char('m'), KeyModifiers::NONE) => Action::EnvToggleSecret,
+        (KeyCode::Char('r'), KeyModifiers::NONE) => Action::EnvToggleReveal,
         _ => Action::NoOp,
     }
 }
@@ -302,6 +306,22 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
         Action::EnvAdd { secret } => {
             state.mode = Mode::Insert;
             state.insert_buf = Some(InsertBuf::new(secret));
+            EnvDirty::No
+        }
+        Action::EnvEdit => {
+            let cur = state.env_cursor;
+            if let Some((k, v, secret)) = state.env_var_at(cur) {
+                let key = k.clone();
+                let value = v.to_string();
+                state.mode = Mode::Insert;
+                state.insert_buf = Some(InsertBuf::editing(cur, key, value, secret));
+            } else {
+                state.toast = Some("nothing to edit".into());
+            }
+            EnvDirty::No
+        }
+        Action::EnvToggleReveal => {
+            state.toggle_reveal();
             EnvDirty::No
         }
         Action::EnvDelete => {
@@ -376,9 +396,19 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
         Action::InsertSubmit => {
             if let Some(buf) = state.insert_buf.take() {
                 state.mode = Mode::Normal;
-                if !buf.key.is_empty() {
-                    state.add_var(buf.key, buf.value, buf.secret);
-                    return EnvDirty::Yes;
+                if buf.key.is_empty() {
+                    return EnvDirty::No;
+                }
+                match buf.edit_idx {
+                    Some(i) => {
+                        if state.replace_var(i, buf.key, buf.value, buf.secret) {
+                            return EnvDirty::Yes;
+                        }
+                    }
+                    None => {
+                        state.add_var(buf.key, buf.value, buf.secret);
+                        return EnvDirty::Yes;
+                    }
                 }
             } else {
                 state.mode = Mode::Normal;
@@ -695,6 +725,17 @@ fn run_command(state: &mut AppState, cmd: &str) -> EnvDirty {
             state.toast = Some(format!("env: {}", name));
         } else {
             state.toast = Some(format!("env not found: {}", name));
+        }
+        return EnvDirty::No;
+    }
+    if let Some(name) = cmd.strip_prefix("newenv ").map(str::trim) {
+        if name.is_empty() {
+            state.toast = Some("usage: :newenv <name>".into());
+        } else if state.create_env(name) {
+            state.toast = Some(format!("created env: {}", name));
+            return EnvDirty::Yes;
+        } else {
+            state.toast = Some(format!("env already exists: {}", name));
         }
         return EnvDirty::No;
     }

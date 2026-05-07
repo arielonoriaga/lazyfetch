@@ -86,6 +86,8 @@ pub struct InsertBuf {
     pub key: String,
     pub value: String,
     pub secret: bool,
+    /// `Some(i)` when editing the row at index `i`; `None` for adding a new row.
+    pub edit_idx: Option<usize>,
 }
 
 impl InsertBuf {
@@ -95,6 +97,17 @@ impl InsertBuf {
             key: String::new(),
             value: String::new(),
             secret,
+            edit_idx: None,
+        }
+    }
+
+    pub fn editing(idx: usize, key: String, value: String, secret: bool) -> Self {
+        Self {
+            field: InsertField::Value,
+            key,
+            value,
+            secret,
+            edit_idx: Some(idx),
         }
     }
 }
@@ -124,6 +137,7 @@ pub struct AppState {
     pub response_width: u16,
     pub response_total_lines: usize,
     pub last_layout: crate::layout::DrawInfo,
+    pub revealed_secrets: std::collections::HashSet<(ulid::Ulid, usize)>,
     pub pending_g: bool,
     pub visual_anchor: Option<(usize, usize)>,
     pub search_buf: String,
@@ -160,6 +174,7 @@ impl AppState {
             response_width: 1,
             response_total_lines: 0,
             last_layout: crate::layout::DrawInfo::default(),
+            revealed_secrets: std::collections::HashSet::new(),
             pending_g: false,
             visual_anchor: None,
             search_buf: String::new(),
@@ -200,6 +215,56 @@ impl AppState {
         ));
         self.env_cursor = env.vars.len().saturating_sub(1);
         self.active_env = Some(id);
+    }
+
+    pub fn replace_var(&mut self, idx: usize, key: String, value: String, secret: bool) -> bool {
+        if let Some(env) = self.active_env_mut() {
+            if let Some(slot) = env.vars.get_mut(idx) {
+                *slot = (
+                    key,
+                    VarValue {
+                        value: SecretString::new(value),
+                        secret,
+                    },
+                );
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn toggle_reveal(&mut self) -> bool {
+        let cur = self.env_cursor;
+        let Some(env_id) = self.active_env_ref().map(|e| e.id) else {
+            return false;
+        };
+        let key = (env_id, cur);
+        if self.revealed_secrets.contains(&key) {
+            self.revealed_secrets.remove(&key);
+        } else {
+            self.revealed_secrets.insert(key);
+        }
+        true
+    }
+
+    pub fn is_revealed(&self, idx: usize) -> bool {
+        self.active_env_ref()
+            .map(|e| self.revealed_secrets.contains(&(e.id, idx)))
+            .unwrap_or(false)
+    }
+
+    pub fn create_env(&mut self, name: &str) -> bool {
+        if self.envs.iter().any(|e| e.name == name) {
+            return false;
+        }
+        self.envs.push(Environment {
+            id: Ulid::new(),
+            name: name.into(),
+            vars: vec![],
+        });
+        self.active_env = Some(self.envs.len() - 1);
+        self.env_cursor = 0;
+        true
     }
 
     fn env_or_create(&mut self) -> usize {

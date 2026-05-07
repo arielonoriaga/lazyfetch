@@ -113,7 +113,8 @@ pub fn draw(f: &mut Frame, state: &AppState) -> DrawInfo {
         },
         Mode::Normal => match state.focus {
             Focus::Env => {
-                "Env: j/k · a add · A add-secret · m toggle-secret · d delete · :env <name>".into()
+                "Env: j/k · a add · A add-sec · e edit · d del · m sec · r reveal · :env / :newenv"
+                    .into()
             }
             Focus::Url => {
                 "URL: type to edit · Backspace · Enter commit · arrows leave pane · ? help".into()
@@ -283,8 +284,12 @@ fn draw_help(f: &mut Frame) {
         row("j / k", "move row cursor"),
         row("a", "add variable"),
         row("A", "add secret variable"),
-        row("m", "toggle secret on selected row"),
+        row("e", "edit selected row"),
         row("d", "delete selected row"),
+        row("m", "toggle secret flag"),
+        row("r", "reveal / hide secret value"),
+        row(":env <name>", "switch active env"),
+        row(":newenv <name>", "create new env (becomes active)"),
         Line::from(""),
         section("Insert mode  (a / A)"),
         row("Tab", "swap key ↔ value field"),
@@ -826,7 +831,7 @@ fn render_env(f: &mut Frame, area: Rect, state: &AppState, focused: bool) {
                 } else {
                     "  "
                 };
-                let display_value = if secret {
+                let display_value = if secret && !state.is_revealed(i) {
                     "***".to_string()
                 } else {
                     v.to_string()
