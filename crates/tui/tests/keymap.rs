@@ -1,14 +1,28 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use lazyfetch_tui::app::{AppState, Focus};
-use lazyfetch_tui::keymap::{apply, dispatch, Action};
+use lazyfetch_tui::keymap::{apply, dispatch, Action, EnvDirty};
+use std::path::PathBuf;
 
 fn key(c: char) -> KeyEvent {
     KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
 }
 
+fn ev(code: KeyCode) -> KeyEvent {
+    KeyEvent::new(code, KeyModifiers::NONE)
+}
+
+fn step(s: &mut AppState, k: KeyEvent) -> EnvDirty {
+    let a = dispatch(s, k);
+    apply(s, a)
+}
+
+fn state() -> AppState {
+    AppState::new(PathBuf::from("/tmp"))
+}
+
 #[test]
 fn q_quits() {
-    let mut s = AppState::new();
+    let mut s = state();
     let a = dispatch(&s, key('q'));
     assert_eq!(a, Action::Quit);
     apply(&mut s, a);
@@ -17,11 +31,83 @@ fn q_quits() {
 
 #[test]
 fn tab_cycles_focus() {
-    let mut s = AppState::new();
-    let a = dispatch(&s, KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
-    apply(&mut s, a);
+    let mut s = state();
+    step(&mut s, ev(KeyCode::Tab));
     assert_eq!(s.focus, Focus::Request);
-    let a = dispatch(&s, KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
-    apply(&mut s, a);
+    step(&mut s, ev(KeyCode::Tab));
     assert_eq!(s.focus, Focus::Response);
+}
+
+fn focus_env(s: &mut AppState) {
+    while s.focus != Focus::Env {
+        step(s, ev(KeyCode::Tab));
+    }
+}
+
+#[test]
+fn env_add_var_round_trip() {
+    let mut s = state();
+    focus_env(&mut s);
+    step(&mut s, key('a'));
+    for c in "API_URL".chars() {
+        step(&mut s, key(c));
+    }
+    step(&mut s, ev(KeyCode::Tab));
+    for c in "https://api.test".chars() {
+        step(&mut s, key(c));
+    }
+    let dirty = step(&mut s, ev(KeyCode::Enter));
+    assert_eq!(dirty, EnvDirty::Yes);
+    let env = s.active_env_ref().unwrap();
+    assert_eq!(env.vars.len(), 1);
+    assert_eq!(env.vars[0].0, "API_URL");
+}
+
+#[test]
+fn env_toggle_secret() {
+    let mut s = state();
+    focus_env(&mut s);
+    s.add_var("TOKEN".into(), "xyz".into(), false);
+    s.env_cursor = 0;
+    let dirty = step(&mut s, key('m'));
+    assert_eq!(dirty, EnvDirty::Yes);
+    let (_, _, secret) = s.env_var_at(0).unwrap();
+    assert!(secret);
+}
+
+#[test]
+fn env_delete_var() {
+    let mut s = state();
+    focus_env(&mut s);
+    s.add_var("X".into(), "1".into(), false);
+    s.add_var("Y".into(), "2".into(), false);
+    s.env_cursor = 0;
+    let dirty = step(&mut s, key('d'));
+    assert_eq!(dirty, EnvDirty::Yes);
+    let env = s.active_env_ref().unwrap();
+    assert_eq!(env.vars.len(), 1);
+    assert_eq!(env.vars[0].0, "Y");
+}
+
+#[test]
+fn command_env_switch() {
+    let mut s = state();
+    use lazyfetch_core::env::Environment;
+    s.envs.push(Environment {
+        id: ulid::Ulid::new(),
+        name: "dev".into(),
+        vars: vec![],
+    });
+    s.envs.push(Environment {
+        id: ulid::Ulid::new(),
+        name: "prod".into(),
+        vars: vec![],
+    });
+    s.active_env = Some(0);
+    step(&mut s, key(':'));
+    for c in "env prod".chars() {
+        step(&mut s, key(c));
+    }
+    step(&mut s, ev(KeyCode::Enter));
+    assert_eq!(s.active_env, Some(1));
 }

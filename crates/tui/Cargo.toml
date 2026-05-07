@@ -11,6 +11,10 @@ lazyfetch-storage = { path = "../storage" }
 ratatui           = "0.28"
 crossterm         = "0.28"
 anyhow            = { workspace = true }
+secrecy           = { workspace = true }
+ulid              = { workspace = true }
 
 [dev-dependencies]
 insta = "1"
+lazyfetch-core = { path = "../core" }
+ulid           = { workspace = true }

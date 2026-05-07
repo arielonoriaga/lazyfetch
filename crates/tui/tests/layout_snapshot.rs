@@ -7,7 +7,7 @@ use ratatui::Terminal;
 fn renders_four_panes() {
     let backend = TestBackend::new(80, 24);
     let mut term = Terminal::new(backend).unwrap();
-    let state = AppState::new();
+    let state = AppState::new(std::path::PathBuf::from("/tmp"));
     term.draw(|f| draw(f, &state)).unwrap();
     let buf = term.backend().buffer().clone();
     let s: String = (0..buf.area.height)

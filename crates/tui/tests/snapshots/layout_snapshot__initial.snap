@@ -8,21 +8,21 @@ expression: s
 │Get started:          ││Pick one from Collections (Tab),                      │
 │  lazyfetch           ││or run from your shell:                               │
 │import-postman <file> ││                                                      │
-│  :new collection     ││  lazyfetch run <coll>/<request>                      │
-│<name>                ││                                                      │
+│  lazyfetch           ││  lazyfetch run <coll>/<request>                      │
+│import-postman <file> ││                                                      │
+│--local               ││                                                      │
 │                      ││                                                      │
-│Files live in         ││                                                      │
-│  ~/.config/lazyfetch/││                                                      │
-│collections/          │└──────────────────────────────────────────────────────┘
-│                      │┌Response──────────────────────────────────────────────┐
+│Files live in         │└──────────────────────────────────────────────────────┘
+│  .lazyfetch/collectio│┌Response──────────────────────────────────────────────┐
 └──────────────────────┘│No response yet                                       │
 ┌Environment───────────┐│                                                      │
-│No environment active ││Open a request, then press                            │
+│No environments yet   ││Open a request, then press                            │
 │                      ││  s         send                                      │
-│Switch with           ││  /  f      search · jq filter                        │
-│  :env <name>         ││  S         save body / cURL                          │
+│Press 'a' to add a    ││  /  f      search · jq filter                        │
+│variable              ││  S         save body / cURL                          │
+│(creates a 'default'  ││                                                      │
+│env)                  ││                                                      │
 │                      ││                                                      │
-│Or create one in      ││                                                      │
-│  ~/.config/lazyfetch/││                                                      │
 └──────────────────────┘└──────────────────────────────────────────────────────┘
-:send  /search  e edit  s send  S save  ? help  q quit
+                                                                                
+:  Tab cycle  ?  help  q quit

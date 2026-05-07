@@ -1218,6 +1218,8 @@ dependencies = [
  "lazyfetch-core",
  "lazyfetch-storage",
  "ratatui",
+ "secrecy",
+ "ulid",
 ]
 
 [[package]]
