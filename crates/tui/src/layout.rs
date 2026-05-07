@@ -12,6 +12,13 @@ pub struct DrawInfo {
     pub response_height: u16,
     pub response_width: u16,
     pub response_total_lines: usize,
+    pub collections_rect: Rect,
+    pub env_rect: Rect,
+    pub url_rect: Rect,
+    pub request_rect: Rect,
+    pub response_rect: Rect,
+    /// Inner area (inside borders + status header) of the response body — for cursor mapping.
+    pub response_body_rect: Rect,
 }
 
 pub fn draw(f: &mut Frame, state: &AppState) -> DrawInfo {
@@ -45,6 +52,11 @@ pub fn draw(f: &mut Frame, state: &AppState) -> DrawInfo {
     render_url_bar(f, right[0], state);
     pane(f, right[1], "Request", Focus::Request, state);
     let resp_info = pane_response(f, right[2], state);
+    let collections_rect = left[0];
+    let env_rect = left[1];
+    let url_rect = right[0];
+    let request_rect = right[1];
+    let response_rect = right[2];
 
     let toast = Paragraph::new(Line::from(state.toast.as_deref().unwrap_or(""))).style(
         Style::default()
@@ -123,10 +135,16 @@ pub fn draw(f: &mut Frame, state: &AppState) -> DrawInfo {
         response_height: resp_info.0,
         response_width: resp_info.1,
         response_total_lines: resp_info.2,
+        collections_rect,
+        env_rect,
+        url_rect,
+        request_rect,
+        response_rect,
+        response_body_rect: resp_info.3,
     }
 }
 
-fn pane_response(f: &mut Frame, area: Rect, state: &AppState) -> (u16, u16, usize) {
+fn pane_response(f: &mut Frame, area: Rect, state: &AppState) -> (u16, u16, usize, Rect) {
     let focused = state.focus == Focus::Response;
     let border_style = if focused {
         Style::default()
@@ -146,7 +164,14 @@ fn pane_response(f: &mut Frame, area: Rect, state: &AppState) -> (u16, u16, usiz
     // Body width = pane inner width minus 2 columns for cursor margin.
     let body_width = inner.width.saturating_sub(2);
     let total = compute_total_lines(state);
-    (body_height, body_width, total)
+    // body_rect: skip the 2 header rows (status + blank), keep margin column on left.
+    let body_rect = Rect {
+        x: inner.x + 2,
+        y: inner.y + 2,
+        width: body_width,
+        height: body_height,
+    };
+    (body_height, body_width, total, body_rect)
 }
 
 fn compute_total_lines(state: &AppState) -> usize {

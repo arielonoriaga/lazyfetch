@@ -1,11 +1,12 @@
-use crate::app::AppState;
+use crate::app::{AppState, Focus};
 use crate::keymap::{apply, dispatch, Action, EnvDirty};
 use crate::layout::draw;
 use crate::sender;
 use crate::terminal::TerminalGuard;
-use crossterm::event::{self, Event};
+use crossterm::event::{self, Event, MouseButton, MouseEvent, MouseEventKind};
 use lazyfetch_storage::collection::FsCollectionRepo;
 use lazyfetch_storage::env::FsEnvRepo;
+use ratatui::layout::Rect;
 use std::time::Duration;
 use tokio::runtime::Handle;
 
@@ -20,6 +21,7 @@ pub fn run(mut state: AppState, rt: Handle) -> anyhow::Result<()> {
         state.response_height = info.response_height;
         state.response_width = info.response_width;
         state.response_total_lines = info.response_total_lines;
+        state.last_layout = info;
 
         // Poll inflight result.
         if let Some(rx) = state.inflight.as_ref() {
@@ -74,12 +76,94 @@ pub fn run(mut state: AppState, rt: Handle) -> anyhow::Result<()> {
                         }
                     }
                 }
+                Event::Mouse(m) => handle_mouse(&mut state, m),
                 Event::Resize(_, _) => {}
                 _ => {}
             }
         }
     }
     Ok(())
+}
+
+fn rect_contains(r: Rect, x: u16, y: u16) -> bool {
+    x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height
+}
+
+fn handle_mouse(state: &mut AppState, m: MouseEvent) {
+    match m.kind {
+        MouseEventKind::Down(MouseButton::Left) => {
+            let info = state.last_layout;
+            let (x, y) = (m.column, m.row);
+            let new_focus = if rect_contains(info.collections_rect, x, y) {
+                Some(Focus::Collections)
+            } else if rect_contains(info.env_rect, x, y) {
+                Some(Focus::Env)
+            } else if rect_contains(info.url_rect, x, y) {
+                Some(Focus::Url)
+            } else if rect_contains(info.request_rect, x, y) {
+                Some(Focus::Request)
+            } else if rect_contains(info.response_rect, x, y) {
+                Some(Focus::Response)
+            } else {
+                None
+            };
+            if let Some(f) = new_focus {
+                state.focus = f;
+            }
+            // If clicking inside the response body, set cursor line + col.
+            if state.focus == Focus::Response && rect_contains(info.response_body_rect, x, y) {
+                let body = info.response_body_rect;
+                let row_in_body = (y - body.y) as usize;
+                let col_in_body = (x.saturating_sub(body.x)) as usize;
+                let target_line = state.response_scroll as usize + row_in_body;
+                state.move_cursor_to(target_line);
+                let len = current_line_len(state);
+                let target_col = state.response_hscroll as usize + col_in_body;
+                state.move_col_to(target_col, len);
+            }
+        }
+        MouseEventKind::ScrollDown if state.focus == Focus::Response => {
+            state.move_cursor_by(3);
+        }
+        MouseEventKind::ScrollUp if state.focus == Focus::Response => {
+            state.move_cursor_by(-3);
+        }
+        _ => {}
+    }
+}
+
+fn current_line_len(state: &AppState) -> usize {
+    let Some(executed) = &state.last_response else {
+        return 0;
+    };
+    let ct = executed
+        .response
+        .headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+        .map(|(_, v)| v.as_str())
+        .unwrap_or("");
+    // Re-pretty-print is fine here — body is small relative to TUI tick.
+    let body = if ct.to_ascii_lowercase().contains("json")
+        || executed
+            .response
+            .body_bytes
+            .first()
+            .map(|b| matches!(b, b'{' | b'['))
+            .unwrap_or(false)
+    {
+        serde_json::from_slice::<serde_json::Value>(&executed.response.body_bytes)
+            .ok()
+            .and_then(|v| serde_json::to_string_pretty(&v).ok())
+            .unwrap_or_else(|| String::from_utf8_lossy(&executed.response.body_bytes).into_owned())
+    } else {
+        String::from_utf8_lossy(&executed.response.body_bytes).into_owned()
+    };
+    let body = executed.secrets.redact(&body);
+    body.lines()
+        .nth(state.response_cursor)
+        .map(|l| l.chars().count())
+        .unwrap_or(0)
 }
 
 fn load_from_disk(state: &mut AppState) -> anyhow::Result<()> {

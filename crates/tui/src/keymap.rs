@@ -501,8 +501,12 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
         }
         Action::JumpMatchingBrace => {
             state.pending_g = false;
-            if let Some(target) = matching_brace_target(state) {
-                state.move_cursor_to(target);
+            if let Some((line, col)) = matching_brace_position(state) {
+                state.move_cursor_to(line);
+                let len = current_line_len(state);
+                state.move_col_to(col, len);
+            } else {
+                state.toast = Some("no matching brace from cursor".into());
             }
             EnvDirty::No
         }
@@ -510,6 +514,9 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
             state.pending_g = false;
             if let Some(target) = sibling_target(state, 1) {
                 state.move_cursor_to(target);
+                let col = first_non_space_col(state);
+                let len = current_line_len(state);
+                state.move_col_to(col, len);
             }
             EnvDirty::No
         }
@@ -517,6 +524,9 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
             state.pending_g = false;
             if let Some(target) = sibling_target(state, -1) {
                 state.move_cursor_to(target);
+                let col = first_non_space_col(state);
+                let len = current_line_len(state);
+                state.move_col_to(col, len);
             }
             EnvDirty::No
         }
@@ -687,67 +697,160 @@ fn run_command(state: &mut AppState, cmd: &str) -> EnvDirty {
     EnvDirty::No
 }
 
-/// Return the index of the line containing the brace that pairs with the first brace on the
-/// cursor line. Searches forward for opening braces, backward for closing braces. Counts
-/// inside string literals are ignored (basic heuristic — cursor lines in pretty JSON only).
-fn matching_brace_target(state: &AppState) -> Option<usize> {
+/// Vim-style `%`: from the cursor position, find the next brace on the current line, then
+/// jump to its matching pair (line + column). Skips characters inside string literals.
+pub fn matching_brace_position(state: &AppState) -> Option<(usize, usize)> {
     let body = current_body(state)?;
     let lines: Vec<&str> = body.lines().collect();
-    let cur = state.response_cursor.min(lines.len().saturating_sub(1));
-    let line = lines.get(cur)?;
-    let opens: u8 = line
-        .chars()
-        .map(|c| match c {
-            '{' | '[' => 1,
-            _ => 0,
-        })
-        .sum();
-    let closes: u8 = line
-        .chars()
-        .map(|c| match c {
-            '}' | ']' => 1,
-            _ => 0,
-        })
-        .sum();
-    if opens > closes {
-        // forward search for matching close
-        let mut depth: i32 = 0;
-        for (i, l) in lines.iter().enumerate().skip(cur) {
-            for c in l.chars() {
-                match c {
-                    '{' | '[' => depth += 1,
-                    '}' | ']' => {
-                        depth -= 1;
-                        if depth == 0 {
-                            return Some(i);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        None
-    } else if closes > opens {
-        // backward search for matching open
-        let mut depth: i32 = 0;
-        for i in (0..=cur).rev() {
-            for c in lines[i].chars().rev() {
-                match c {
-                    '}' | ']' => depth += 1,
-                    '{' | '[' => {
-                        depth -= 1;
-                        if depth == 0 {
-                            return Some(i);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        None
+    let cur_line = state.response_cursor.min(lines.len().saturating_sub(1));
+    let cur_col = state.response_col;
+
+    let line_chars: Vec<char> = lines.get(cur_line)?.chars().collect();
+    let (start_col, start_brace) = first_brace_at_or_after(&line_chars, cur_col)?;
+    let opener = matches!(start_brace, '{' | '[' | '(');
+
+    if opener {
+        forward_match(&lines, cur_line, start_col + 1, start_brace)
     } else {
-        None
+        backward_match(&lines, cur_line, start_col, start_brace)
     }
+}
+
+fn first_brace_at_or_after(chars: &[char], from: usize) -> Option<(usize, char)> {
+    let mut in_str = false;
+    let mut esc = false;
+    for (i, &c) in chars.iter().enumerate() {
+        if i < from {
+            // Still need to track string state from line start.
+            if esc {
+                esc = false;
+            } else if c == '\\' && in_str {
+                esc = true;
+            } else if c == '"' {
+                in_str = !in_str;
+            }
+            continue;
+        }
+        if esc {
+            esc = false;
+            continue;
+        }
+        if c == '\\' && in_str {
+            esc = true;
+            continue;
+        }
+        if c == '"' {
+            in_str = !in_str;
+            continue;
+        }
+        if !in_str && matches!(c, '{' | '}' | '[' | ']' | '(' | ')') {
+            return Some((i, c));
+        }
+    }
+    None
+}
+
+fn forward_match(
+    lines: &[&str],
+    start_line: usize,
+    start_col: usize,
+    opener: char,
+) -> Option<(usize, usize)> {
+    let close = match opener {
+        '{' => '}',
+        '[' => ']',
+        '(' => ')',
+        _ => return None,
+    };
+    let mut depth: i32 = 1;
+    let mut in_str = false;
+    let mut esc = false;
+    for (i, l) in lines.iter().enumerate().skip(start_line) {
+        let chars: Vec<char> = l.chars().collect();
+        let from = if i == start_line { start_col } else { 0 };
+        for (off, &c) in chars[from..].iter().enumerate() {
+            let abs = from + off;
+            if esc {
+                esc = false;
+                continue;
+            }
+            if c == '\\' && in_str {
+                esc = true;
+                continue;
+            }
+            if c == '"' {
+                in_str = !in_str;
+                continue;
+            }
+            if in_str {
+                continue;
+            }
+            if c == opener {
+                depth += 1;
+            } else if c == close {
+                depth -= 1;
+                if depth == 0 {
+                    return Some((i, abs));
+                }
+            }
+        }
+    }
+    None
+}
+
+fn backward_match(
+    lines: &[&str],
+    start_line: usize,
+    start_col: usize,
+    closer: char,
+) -> Option<(usize, usize)> {
+    let open = match closer {
+        '}' => '{',
+        ']' => '[',
+        ')' => '(',
+        _ => return None,
+    };
+    let mut depth: i32 = 1;
+    let mut entries: Vec<(usize, usize, char)> = Vec::new();
+    let mut in_str = false;
+    let mut esc = false;
+    for (li, l) in lines.iter().enumerate().take(start_line + 1) {
+        let chars: Vec<char> = l.chars().collect();
+        let upto = if li == start_line {
+            start_col
+        } else {
+            chars.len()
+        };
+        for (col, &c) in chars[..upto].iter().enumerate() {
+            if esc {
+                esc = false;
+                continue;
+            }
+            if c == '\\' && in_str {
+                esc = true;
+                continue;
+            }
+            if c == '"' {
+                in_str = !in_str;
+                continue;
+            }
+            if in_str {
+                continue;
+            }
+            entries.push((li, col, c));
+        }
+    }
+    for (li, col, c) in entries.into_iter().rev() {
+        if c == closer {
+            depth += 1;
+        } else if c == open {
+            depth -= 1;
+            if depth == 0 {
+                return Some((li, col));
+            }
+        }
+    }
+    None
 }
 
 /// Walk forward (`dir=1`) or backward (`dir=-1`) to the next non-empty line at the same
@@ -788,6 +891,16 @@ fn current_body(state: &AppState) -> Option<String> {
         .unwrap_or("");
     let body = pretty_body_for_search(ct, &executed.response.body_bytes);
     Some(executed.secrets.redact(&body))
+}
+
+fn first_non_space_col(state: &AppState) -> usize {
+    current_body(state)
+        .and_then(|b| {
+            b.lines()
+                .nth(state.response_cursor)
+                .map(|l| l.chars().take_while(|c| c.is_whitespace()).count())
+        })
+        .unwrap_or(0)
 }
 
 fn current_line_len(state: &AppState) -> usize {
