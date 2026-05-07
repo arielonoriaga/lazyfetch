@@ -1,21 +1,50 @@
 use crate::app::AppState;
-use crate::keymap::{apply, dispatch, EnvDirty};
+use crate::keymap::{apply, dispatch, Action, EnvDirty};
 use crate::layout::draw;
+use crate::sender;
 use crate::terminal::TerminalGuard;
 use crossterm::event::{self, Event};
 use lazyfetch_storage::collection::FsCollectionRepo;
 use lazyfetch_storage::env::FsEnvRepo;
 use std::time::Duration;
+use tokio::runtime::Handle;
 
-pub fn run(mut state: AppState) -> anyhow::Result<()> {
+pub fn run(mut state: AppState, rt: Handle) -> anyhow::Result<()> {
     load_from_disk(&mut state)?;
     let mut guard = TerminalGuard::new()?;
     while !state.should_quit {
         guard.term.draw(|f| draw(f, &state))?;
+
+        // Poll inflight result.
+        if let Some(rx) = state.inflight.as_ref() {
+            match rx.try_recv() {
+                Ok(Ok(executed)) => {
+                    state.toast = Some(format!(
+                        "{} {}ms",
+                        executed.response.status,
+                        executed.response.elapsed.as_millis()
+                    ));
+                    state.last_response = Some(executed);
+                    state.last_error = None;
+                    state.inflight = None;
+                }
+                Ok(Err(e)) => {
+                    state.last_error = Some(format!("{e}"));
+                    state.toast = Some("error".into());
+                    state.inflight = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    state.inflight = None;
+                }
+            }
+        }
+
         if event::poll(Duration::from_millis(100))? {
             match event::read()? {
                 Event::Key(k) => {
                     let action = dispatch(&state, k);
+                    let send_now = matches!(action, Action::SendRequest);
                     let dirty = apply(&mut state, action);
                     if dirty == EnvDirty::Yes {
                         if let Some(env) = state.active_env_ref() {
@@ -25,6 +54,17 @@ pub fn run(mut state: AppState) -> anyhow::Result<()> {
                             } else {
                                 state.toast = Some(format!("saved {}", env.name));
                             }
+                        }
+                    }
+                    if send_now {
+                        if state.inflight.is_some() {
+                            state.toast = Some("send already in flight".into());
+                        } else if state.url_buf.is_empty() {
+                            state.toast = Some("URL is empty".into());
+                        } else {
+                            state.toast =
+                                Some(format!("sending {} {}…", state.method, state.url_buf));
+                            state.inflight = Some(sender::dispatch(&state, rt.clone()));
                         }
                     }
                 }

@@ -1216,10 +1216,13 @@ dependencies = [
  "crossterm",
  "http",
  "insta",
+ "lazyfetch-auth",
  "lazyfetch-core",
+ "lazyfetch-http",
  "lazyfetch-storage",
  "ratatui",
  "secrecy",
+ "tokio",
  "ulid",
 ]
 

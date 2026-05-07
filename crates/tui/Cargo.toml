@@ -8,12 +8,15 @@ license.workspace = true
 [dependencies]
 lazyfetch-core    = { path = "../core" }
 lazyfetch-storage = { path = "../storage" }
+lazyfetch-http    = { path = "../http" }
+lazyfetch-auth    = { path = "../auth" }
 ratatui           = "0.28"
 crossterm         = "0.28"
 anyhow            = { workspace = true }
 secrecy           = { workspace = true }
 ulid              = { workspace = true }
 http              = { workspace = true }
+tokio             = { workspace = true }
 
 [dev-dependencies]
 insta = "1"

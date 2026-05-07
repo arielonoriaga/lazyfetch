@@ -29,6 +29,7 @@ pub enum Action {
     UrlSubmit,
     MethodNext,
     MethodPrev,
+    SendRequest,
     NoOp,
 }
 
@@ -52,6 +53,8 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
     if state.focus == Focus::Url {
         return match (ev.code, ev.modifiers) {
             (KeyCode::Char('c'), KeyModifiers::CONTROL) => Action::Quit,
+            (KeyCode::Char('s'), KeyModifiers::CONTROL) => Action::SendRequest,
+            (KeyCode::Enter, _) => Action::SendRequest,
             (KeyCode::Tab, _) => Action::FocusNext,
             (KeyCode::BackTab, _) => Action::FocusPrev,
             (KeyCode::Up, m) if m.contains(KeyModifiers::ALT) => Action::MethodPrev,
@@ -71,6 +74,8 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
         (KeyCode::BackTab, _) => Action::FocusPrev,
         (KeyCode::Char(':'), KeyModifiers::NONE) => Action::EnterCommand,
         (KeyCode::Char('?'), _) => Action::ToggleHelp,
+        (KeyCode::Char('s'), KeyModifiers::NONE) => Action::SendRequest,
+        (KeyCode::Char('s'), KeyModifiers::CONTROL) => Action::SendRequest,
         (KeyCode::Left, _) | (KeyCode::Char('h'), KeyModifiers::NONE) => {
             Action::FocusDir(Dir::Left)
         }
@@ -280,6 +285,11 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
         Action::MethodPrev => {
             state.method = prev_method(&state.method);
             state.toast = Some(format!("method: {}", state.method));
+            EnvDirty::No
+        }
+        Action::SendRequest => {
+            // Sentinel — the event loop owns the tokio Handle and dispatches.
+            // We just signal intent here; loop checks it via the action enum.
             EnvDirty::No
         }
         Action::NoOp => EnvDirty::No,

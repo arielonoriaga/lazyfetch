@@ -168,7 +168,7 @@ fn command_method_sets() {
 }
 
 #[test]
-fn url_bar_typing_appends_to_buf_and_enter_jumps_to_request() {
+fn url_bar_typing_appends_to_buf() {
     let mut s = state();
     while s.focus != Focus::Url {
         step(&mut s, ev(KeyCode::Tab));
@@ -179,8 +179,23 @@ fn url_bar_typing_appends_to_buf_and_enter_jumps_to_request() {
     assert_eq!(s.url_buf, "https://x.test");
     step(&mut s, ev(KeyCode::Backspace));
     assert_eq!(s.url_buf, "https://x.tes");
-    step(&mut s, ev(KeyCode::Enter));
-    assert_eq!(s.focus, Focus::Request);
+}
+
+#[test]
+fn url_bar_enter_emits_send_action() {
+    let mut s = state();
+    while s.focus != Focus::Url {
+        step(&mut s, ev(KeyCode::Tab));
+    }
+    let a = dispatch(&s, ev(KeyCode::Enter));
+    assert_eq!(a, Action::SendRequest);
+}
+
+#[test]
+fn s_key_emits_send_in_normal_pane() {
+    let s = state();
+    let a = dispatch(&s, key('s'));
+    assert_eq!(a, Action::SendRequest);
 }
 
 #[test]

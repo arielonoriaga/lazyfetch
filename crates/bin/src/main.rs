@@ -37,8 +37,9 @@ async fn main() -> anyhow::Result<()> {
         None => {
             let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
             let cfg = resolve_config_dir(cli.config_dir, &cwd);
+            let rt = tokio::runtime::Handle::current();
             tokio::task::spawn_blocking(move || {
-                lazyfetch_tui::event::run(lazyfetch_tui::app::AppState::new(cfg))
+                lazyfetch_tui::event::run(lazyfetch_tui::app::AppState::new(cfg), rt)
             })
             .await?
         }

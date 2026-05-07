@@ -144,9 +144,13 @@ fn draw_help(f: &mut Frame) {
         row(":", "command mode"),
         row("q  /  C-c", "quit"),
         Line::from(""),
+        section("Send"),
+        row("s", "send current request (any pane)"),
+        row("Enter", "send (when URL bar focused)"),
+        row("Ctrl-s", "send (any pane)"),
+        Line::from(""),
         section("URL bar"),
         row("type / Bksp", "edit URL inline"),
-        row("Enter", "commit · jump to Request"),
         row("Alt-↑ / Alt-↓", "cycle HTTP method"),
         row(":method GET", "set method by name (any pane)"),
         Line::from(""),
@@ -232,19 +236,74 @@ fn pane(f: &mut Frame, area: Rect, title: &str, my: Focus, state: &AppState) {
                 "  lazyfetch run <coll>/<request>",
             ],
         ),
-        Focus::Response => empty(
-            f,
-            inner,
-            "No response yet",
-            &[
-                "Open a request, then press",
-                "  s         send",
-                "  /  f      search · jq filter",
-                "  S         save body / cURL",
-            ],
-        ),
+        Focus::Response => render_response(f, inner, state),
         Focus::Url => {} // rendered by render_url_bar above this pane()
     }
+}
+
+fn render_response(f: &mut Frame, area: Rect, state: &AppState) {
+    if state.inflight.is_some() {
+        empty(f, area, "Sending…", &["press Ctrl-c to cancel"]);
+        return;
+    }
+    if let Some(err) = &state.last_error {
+        let lines = vec![
+            Line::from(Span::styled(
+                "Request failed",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(err.clone(), Style::default().fg(Color::Red))),
+        ];
+        f.render_widget(
+            Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false }),
+            area,
+        );
+        return;
+    }
+    let Some(executed) = &state.last_response else {
+        empty(
+            f,
+            area,
+            "No response yet",
+            &[
+                "Press 's' (any pane) or Enter (URL bar)",
+                "to send the current request.",
+            ],
+        );
+        return;
+    };
+    let resp = &executed.response;
+    let status_color = match resp.status / 100 {
+        2 => Color::Green,
+        3 => Color::Cyan,
+        4 => Color::Yellow,
+        5 => Color::Red,
+        _ => Color::Gray,
+    };
+    let mut lines: Vec<Line> = vec![Line::from(vec![
+        Span::styled(
+            format!("{} ", resp.status),
+            Style::default()
+                .fg(status_color)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!("· {}ms · {}B", resp.elapsed.as_millis(), resp.size),
+            Style::default().fg(Color::DarkGray),
+        ),
+    ])];
+    lines.push(Line::from(""));
+    let body = String::from_utf8_lossy(&resp.body_bytes);
+    let body = executed.secrets.redact(&body);
+    let max = area.height.saturating_sub(3) as usize;
+    for line in body.lines().take(max) {
+        lines.push(Line::from(line.to_string()));
+    }
+    f.render_widget(
+        Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false }),
+        area,
+    );
 }
 
 fn render_url_bar(f: &mut Frame, area: Rect, state: &AppState) {

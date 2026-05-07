@@ -1,7 +1,9 @@
 use lazyfetch_core::catalog::Collection;
 use lazyfetch_core::env::{Environment, VarValue};
+use lazyfetch_core::exec::{ExecError, Executed};
 use secrecy::{ExposeSecret, SecretString};
 use std::path::PathBuf;
+use std::sync::mpsc::Receiver;
 use ulid::Ulid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -110,6 +112,9 @@ pub struct AppState {
     pub help_open: bool,
     pub url_buf: String,
     pub method: http::Method,
+    pub last_response: Option<Executed>,
+    pub last_error: Option<String>,
+    pub inflight: Option<Receiver<Result<Executed, ExecError>>>,
     pub should_quit: bool,
 }
 
@@ -129,6 +134,9 @@ impl AppState {
             help_open: false,
             url_buf: String::new(),
             method: http::Method::GET,
+            last_response: None,
+            last_error: None,
+            inflight: None,
             should_quit: false,
         }
     }
