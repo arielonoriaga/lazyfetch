@@ -33,6 +33,7 @@ pub enum Mode {
     Search,
     SaveAs,
     Rename,
+    Move,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -163,6 +164,8 @@ pub struct AppState {
     pub url_suggest_idx: usize,
     pub coll_cursor: usize,
     pub expanded_colls: std::collections::HashSet<ulid::Ulid>,
+    pub marked_requests: std::collections::HashSet<(usize, usize)>,
+    pub move_buf: String,
     pub rename_target: Option<RenameTarget>,
     pub rename_buf: String,
     pub help_filter: String,
@@ -207,6 +210,8 @@ impl AppState {
             url_suggest_idx: 0,
             coll_cursor: 0,
             expanded_colls: std::collections::HashSet::new(),
+            marked_requests: std::collections::HashSet::new(),
+            move_buf: String::new(),
             rename_target: None,
             rename_buf: String::new(),
             help_filter: String::new(),

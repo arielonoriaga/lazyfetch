@@ -130,6 +130,28 @@ impl FsCollectionRepo {
         Ok(())
     }
 
+    /// Move a request from one collection to another. Creates the destination collection
+    /// scaffold if needed. Refuses to overwrite an existing target file.
+    pub fn move_request(&self, from_coll: &str, name: &str, to_coll: &str) -> std::io::Result<()> {
+        if from_coll == to_coll {
+            return Ok(());
+        }
+        let from_dir = self.root.join(Self::slug(from_coll)).join("requests");
+        let from_path = from_dir.join(format!("{}.yaml", Self::slug(name)));
+        if !from_path.is_file() {
+            return Err(std::io::Error::other(format!(
+                "request not found: {}/{}",
+                from_coll, name
+            )));
+        }
+        let req: Request =
+            serde_yaml::from_str(&std::fs::read_to_string(&from_path)?).map_err(io_err)?;
+        // save_request creates the destination scaffold + atomic-writes the file
+        self.save_request(to_coll, &req)?;
+        std::fs::remove_file(&from_path)?;
+        Ok(())
+    }
+
     /// Rename a request inside a collection.
     pub fn rename_request(&self, coll_name: &str, old: &str, new: &str) -> std::io::Result<()> {
         if old == new {

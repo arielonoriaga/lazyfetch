@@ -73,6 +73,7 @@ pub fn draw(f: &mut Frame, state: &AppState) -> DrawInfo {
         Mode::Search => (" SEARCH ", Color::Black, Color::Yellow),
         Mode::SaveAs => (" SAVE ", Color::Black, Color::Yellow),
         Mode::Rename => ("RENAME ", Color::Black, Color::Magenta),
+        Mode::Move => (" MOVE  ", Color::Black, Color::Magenta),
     };
     let mode_span = Span::styled(
         mode_label.to_string(),
@@ -88,6 +89,7 @@ pub fn draw(f: &mut Frame, state: &AppState) -> DrawInfo {
         Mode::Insert => "(insert popup — Tab swap · Enter save · Esc cancel)".into(),
         Mode::SaveAs => format!("Save as: {}", state.save_buf),
         Mode::Rename => format!("Rename to: {}", state.rename_buf),
+        Mode::Move => format!("Move {} → {}", state.marked_requests.len(), state.move_buf),
         Mode::Normal => match state.focus {
             Focus::Env => {
                 "Env: j/k · a add · A add-sec · e edit · d del · m sec · r reveal · :env / :newenv"
@@ -139,6 +141,9 @@ pub fn draw(f: &mut Frame, state: &AppState) -> DrawInfo {
     }
     if state.mode == Mode::Rename {
         draw_rename_modal(f, state);
+    }
+    if state.mode == Mode::Move {
+        draw_move_modal(f, state);
     }
     if state.focus == Focus::Url {
         draw_url_suggestions(f, url_rect, state);
@@ -193,6 +198,113 @@ fn compute_total_lines(state: &AppState) -> usize {
     let body = pretty_body(ct, &executed.response.body_bytes);
     let body = executed.secrets.redact(&body);
     body.lines().count()
+}
+
+fn draw_move_modal(f: &mut Frame, state: &AppState) {
+    use ratatui::widgets::Clear;
+    let n = state.marked_requests.len();
+    let area = f.area();
+    let w = area.width.min(64);
+    let h = 11u16.min(area.height);
+    let x = area.x + (area.width.saturating_sub(w)) / 2;
+    let y = area.y + (area.height.saturating_sub(h)) / 3;
+    let popup = Rect {
+        x,
+        y,
+        width: w,
+        height: h,
+    };
+    let title = Line::from(vec![
+        Span::styled(
+            format!(" Move {} request{} ", n, if n == 1 { "" } else { "s" }),
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            " → target collection ",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Plain)
+        .border_style(
+            Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
+        )
+        .title(title);
+    let inner = block.inner(popup);
+    f.render_widget(Clear, popup);
+    f.render_widget(block, popup);
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+    let known: Vec<String> = state.collections.iter().map(|c| c.name.clone()).collect();
+    let label = Line::from(Span::styled(
+        " Target collection (existing or new)",
+        Style::default().fg(Color::Gray),
+    ));
+    let input = Line::from(vec![
+        Span::styled(
+            "▌ ",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            state.move_buf.clone(),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            "▏",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::SLOW_BLINK),
+        ),
+    ]);
+    let known_line = Line::from(Span::styled(
+        format!(" Existing: {}", known.join(", ")),
+        Style::default()
+            .fg(Color::DarkGray)
+            .add_modifier(Modifier::ITALIC),
+    ));
+    let footer = Line::from(vec![
+        Span::styled(
+            " Enter ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" move  ", Style::default().fg(Color::Gray)),
+        Span::styled(
+            " Esc ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Red)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" cancel", Style::default().fg(Color::Gray)),
+    ]);
+    f.render_widget(Paragraph::new(label), rows[0]);
+    f.render_widget(Paragraph::new(input), rows[2]);
+    f.render_widget(Paragraph::new(known_line), rows[4]);
+    f.render_widget(Paragraph::new(footer), rows[5]);
 }
 
 fn draw_rename_modal(f: &mut Frame, state: &AppState) {
@@ -753,6 +865,8 @@ fn draw_help(f: &mut Frame, state: &AppState) {
         row("j / k", "move row cursor"),
         row("Space", "expand / collapse collection"),
         row("r", "rename collection / request"),
+        row("x", "mark / unmark request for batch move"),
+        row("M", "move marked (or cursor) request → another collection"),
         row(
             "Enter",
             "expand collection · open request (loads URL + method)",
@@ -1320,6 +1434,7 @@ fn render_collections(f: &mut Frame, area: Rect, state: &AppState, focused: bool
                         Item::Request(r) => r,
                         _ => return Line::from(""),
                     };
+                    let marked = state.marked_requests.contains(&(coll, item));
                     let m = r.method.as_str();
                     let m_color = match m {
                         "GET" => Color::Green,
@@ -1329,9 +1444,18 @@ fn render_collections(f: &mut Frame, area: Rect, state: &AppState, focused: bool
                         "DELETE" => Color::Red,
                         _ => Color::Gray,
                     };
+                    let mark_glyph = if marked { "✓ " } else { "  " };
+                    let mark_style = if marked {
+                        Style::default()
+                            .fg(Color::Magenta)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default()
+                    };
                     Line::from(vec![
                         Span::styled(cursor_mark.to_string(), cursor_style),
-                        Span::raw("    "),
+                        Span::raw("  "),
+                        Span::styled(mark_glyph.to_string(), mark_style),
                         Span::styled(
                             format!("{:<6}", m),
                             Style::default().fg(m_color).add_modifier(Modifier::BOLD),

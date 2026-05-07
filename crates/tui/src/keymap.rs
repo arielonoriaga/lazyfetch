@@ -70,6 +70,12 @@ pub enum Action {
     CollToggle,
     CollOpen,
     CollRenameStart,
+    CollToggleMark,
+    CollMoveStart,
+    MoveChar(char),
+    MoveBackspace,
+    MoveSubmit,
+    MoveCancel,
     RenameChar(char),
     RenameBackspace,
     RenameSubmit,
@@ -103,6 +109,19 @@ pub fn dispatch(state: &AppState, ev: KeyEvent) -> Action {
         Mode::Search => dispatch_search(ev),
         Mode::SaveAs => dispatch_save_as(ev),
         Mode::Rename => dispatch_rename(ev),
+        Mode::Move => dispatch_move(ev),
+    }
+}
+
+fn dispatch_move(ev: KeyEvent) -> Action {
+    match (ev.code, ev.modifiers) {
+        (KeyCode::Esc, _) => Action::MoveCancel,
+        (KeyCode::Enter, _) => Action::MoveSubmit,
+        (KeyCode::Backspace, _) => Action::MoveBackspace,
+        (KeyCode::Char(c), KeyModifiers::NONE) | (KeyCode::Char(c), KeyModifiers::SHIFT) => {
+            Action::MoveChar(c)
+        }
+        _ => Action::NoOp,
     }
 }
 
@@ -292,6 +311,8 @@ fn dispatch_collections(ev: KeyEvent) -> Action {
         (KeyCode::Char(' '), _) => Action::CollToggle,
         (KeyCode::Enter, _) => Action::CollOpen,
         (KeyCode::Char('r'), _) => Action::CollRenameStart,
+        (KeyCode::Char('x'), _) => Action::CollToggleMark,
+        (KeyCode::Char('M'), _) => Action::CollMoveStart,
         _ => Action::NoOp,
     }
 }
@@ -900,6 +921,57 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
             state.help_filter.pop();
             EnvDirty::No
         }
+        Action::CollToggleMark => {
+            use crate::app::CollRow;
+            if let Some(CollRow::Req { coll, item }) =
+                state.coll_rows().get(state.coll_cursor).copied()
+            {
+                let key = (coll, item);
+                if state.marked_requests.contains(&key) {
+                    state.marked_requests.remove(&key);
+                } else {
+                    state.marked_requests.insert(key);
+                }
+            }
+            EnvDirty::No
+        }
+        Action::CollMoveStart => {
+            use crate::app::CollRow;
+            // If nothing is marked, mark the cursor row (if a request) so move has a target.
+            if state.marked_requests.is_empty() {
+                if let Some(CollRow::Req { coll, item }) =
+                    state.coll_rows().get(state.coll_cursor).copied()
+                {
+                    state.marked_requests.insert((coll, item));
+                }
+            }
+            if state.marked_requests.is_empty() {
+                state.toast = Some("nothing to move (use 'x' to mark requests)".into());
+                return EnvDirty::No;
+            }
+            state.move_buf.clear();
+            state.mode = Mode::Move;
+            EnvDirty::No
+        }
+        Action::MoveChar(c) => {
+            state.move_buf.push(c);
+            EnvDirty::No
+        }
+        Action::MoveBackspace => {
+            state.move_buf.pop();
+            EnvDirty::No
+        }
+        Action::MoveCancel => {
+            state.mode = Mode::Normal;
+            state.move_buf.clear();
+            EnvDirty::No
+        }
+        Action::MoveSubmit => {
+            let target = std::mem::take(&mut state.move_buf);
+            state.mode = Mode::Normal;
+            run_move(state, target.trim());
+            EnvDirty::No
+        }
         Action::EnterSaveAs => {
             if state.url_buf.is_empty() {
                 state.toast = Some("URL is empty — nothing to save".into());
@@ -1371,6 +1443,59 @@ fn pretty_body_for_search(content_type: &str, body: &[u8]) -> String {
 fn looks_like_json(body: &[u8]) -> bool {
     let s = std::str::from_utf8(body).unwrap_or("").trim_start();
     s.starts_with('{') || s.starts_with('[')
+}
+
+fn run_move(state: &mut AppState, target: &str) {
+    use lazyfetch_core::catalog::Item;
+    use lazyfetch_storage::collection::FsCollectionRepo;
+    if target.is_empty() {
+        state.toast = Some("usage: type target collection name".into());
+        return;
+    }
+    let repo = FsCollectionRepo::new(state.config_dir.join("collections"));
+    let marks: Vec<(usize, usize)> = state.marked_requests.iter().copied().collect();
+    let mut moved = 0usize;
+    let mut errors = 0usize;
+    for (coll_idx, item_idx) in &marks {
+        let Some(coll) = state.collections.get(*coll_idx) else {
+            continue;
+        };
+        if coll.name == target {
+            continue; // skip same-collection moves
+        }
+        let from_coll = coll.name.clone();
+        let req_name = match coll.root.items.get(*item_idx) {
+            Some(Item::Request(r)) => r.name.clone(),
+            _ => continue,
+        };
+        match repo.move_request(&from_coll, &req_name, target) {
+            Ok(()) => moved += 1,
+            Err(_) => errors += 1,
+        }
+    }
+
+    // Reload affected collections + ensure target is loaded.
+    let mut affected_names: std::collections::HashSet<String> = marks
+        .iter()
+        .filter_map(|(c, _)| state.collections.get(*c).map(|x| x.name.clone()))
+        .collect();
+    affected_names.insert(target.to_string());
+    for name in affected_names {
+        if let Ok(c) = repo.load_by_name(&name) {
+            if let Some(idx) = state.collections.iter().position(|x| x.name == name) {
+                state.collections[idx] = c;
+            } else {
+                state.collections.push(c);
+            }
+        }
+    }
+
+    state.marked_requests.clear();
+    state.toast = Some(if errors == 0 {
+        format!("moved {} → {}", moved, target)
+    } else {
+        format!("moved {} ({} failed) → {}", moved, errors, target)
+    });
 }
 
 fn run_rename(state: &mut AppState, target: Option<crate::app::RenameTarget>, new: &str) {
