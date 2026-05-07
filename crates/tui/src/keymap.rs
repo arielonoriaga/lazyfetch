@@ -1,4 +1,4 @@
-use crate::app::{AppState, Focus, InsertBuf, InsertField, Mode};
+use crate::app::{AppState, Dir, Focus, InsertBuf, InsertField, Mode};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -6,6 +6,7 @@ pub enum Action {
     Quit,
     FocusNext,
     FocusPrev,
+    FocusDir(Dir),
     EnvCursorUp,
     EnvCursorDown,
     EnvAdd { secret: bool },
@@ -48,6 +49,16 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
         (KeyCode::BackTab, _) => Action::FocusPrev,
         (KeyCode::Char(':'), KeyModifiers::NONE) => Action::EnterCommand,
         (KeyCode::Char('?'), _) => Action::ToggleHelp,
+        // spatial pane movement (arrows + h/l, never j/k)
+        (KeyCode::Left, _) | (KeyCode::Char('h'), KeyModifiers::NONE) => {
+            Action::FocusDir(Dir::Left)
+        }
+        (KeyCode::Right, _) | (KeyCode::Char('l'), KeyModifiers::NONE) => {
+            Action::FocusDir(Dir::Right)
+        }
+        (KeyCode::Up, _) => Action::FocusDir(Dir::Up),
+        (KeyCode::Down, _) => Action::FocusDir(Dir::Down),
+        // pane-local keys (j/k = list cursor within the pane)
         _ if state.focus == Focus::Env => dispatch_env(ev),
         _ => Action::NoOp,
     }
@@ -55,8 +66,8 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
 
 fn dispatch_env(ev: KeyEvent) -> Action {
     match (ev.code, ev.modifiers) {
-        (KeyCode::Char('j'), _) | (KeyCode::Down, _) => Action::EnvCursorDown,
-        (KeyCode::Char('k'), _) | (KeyCode::Up, _) => Action::EnvCursorUp,
+        (KeyCode::Char('j'), _) => Action::EnvCursorDown,
+        (KeyCode::Char('k'), _) => Action::EnvCursorUp,
         (KeyCode::Char('a'), KeyModifiers::NONE) => Action::EnvAdd { secret: false },
         (KeyCode::Char('A'), _) => Action::EnvAdd { secret: true },
         (KeyCode::Char('d'), KeyModifiers::NONE) => Action::EnvDelete,
@@ -104,6 +115,10 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
         }
         Action::FocusPrev => {
             state.focus = state.focus.prev();
+            EnvDirty::No
+        }
+        Action::FocusDir(d) => {
+            state.focus = state.focus.neighbour(d);
             EnvDirty::No
         }
         Action::EnvCursorUp => {

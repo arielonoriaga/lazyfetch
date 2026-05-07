@@ -37,6 +37,31 @@ impl Focus {
             Focus::Env => Focus::Response,
         }
     }
+
+    /// Spatial neighbour in the 2x2 grid.
+    /// Layout:  Collections | Request
+    ///          Env         | Response
+    pub fn neighbour(self, dir: Dir) -> Self {
+        match (self, dir) {
+            (Focus::Collections, Dir::Right) => Focus::Request,
+            (Focus::Collections, Dir::Down) => Focus::Env,
+            (Focus::Request, Dir::Left) => Focus::Collections,
+            (Focus::Request, Dir::Down) => Focus::Response,
+            (Focus::Response, Dir::Left) => Focus::Env,
+            (Focus::Response, Dir::Up) => Focus::Request,
+            (Focus::Env, Dir::Right) => Focus::Response,
+            (Focus::Env, Dir::Up) => Focus::Collections,
+            (s, _) => s,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dir {
+    Left,
+    Right,
+    Up,
+    Down,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

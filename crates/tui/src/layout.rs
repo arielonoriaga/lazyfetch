@@ -130,13 +130,14 @@ fn draw_help(f: &mut Frame) {
 
     let lines: Vec<Line> = vec![
         section("Global"),
+        row("h j k l", "(arrows) — spatial pane move"),
         row("Tab / S-Tab", "cycle pane focus"),
         row("?", "toggle this help"),
         row(":", "command mode"),
         row("q  /  C-c", "quit"),
         Line::from(""),
         section("Env pane"),
-        row("j / k", "move row cursor (↑/↓ also)"),
+        row("j / k", "move row cursor"),
         row("a", "add variable"),
         row("A", "add secret variable"),
         row("m", "toggle secret on selected row"),

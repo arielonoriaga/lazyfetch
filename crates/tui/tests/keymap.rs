@@ -38,10 +38,60 @@ fn tab_cycles_focus() {
     assert_eq!(s.focus, Focus::Response);
 }
 
+#[test]
+fn arrows_move_spatially() {
+    // Layout: Collections | Request
+    //         Env         | Response
+    let mut s = state();
+    assert_eq!(s.focus, Focus::Collections);
+    step(&mut s, ev(KeyCode::Right));
+    assert_eq!(s.focus, Focus::Request);
+    step(&mut s, ev(KeyCode::Down));
+    assert_eq!(s.focus, Focus::Response);
+    step(&mut s, ev(KeyCode::Left));
+    assert_eq!(s.focus, Focus::Env);
+    step(&mut s, ev(KeyCode::Up));
+    assert_eq!(s.focus, Focus::Collections);
+}
+
+#[test]
+fn h_l_also_move_panes() {
+    let mut s = state();
+    step(&mut s, key('l'));
+    assert_eq!(s.focus, Focus::Request);
+    step(&mut s, key('h'));
+    assert_eq!(s.focus, Focus::Collections);
+}
+
+#[test]
+fn movement_off_grid_is_noop() {
+    let mut s = state();
+    // Collections has no left/up neighbour
+    step(&mut s, ev(KeyCode::Left));
+    assert_eq!(s.focus, Focus::Collections);
+    step(&mut s, ev(KeyCode::Up));
+    assert_eq!(s.focus, Focus::Collections);
+}
+
 fn focus_env(s: &mut AppState) {
     while s.focus != Focus::Env {
         step(s, ev(KeyCode::Tab));
     }
+}
+
+#[test]
+fn env_jk_moves_row_cursor_not_panes() {
+    let mut s = state();
+    focus_env(&mut s);
+    s.add_var("X".into(), "1".into(), false);
+    s.add_var("Y".into(), "2".into(), false);
+    s.env_cursor = 0;
+    step(&mut s, key('j'));
+    assert_eq!(s.env_cursor, 1);
+    assert_eq!(s.focus, Focus::Env);
+    step(&mut s, key('k'));
+    assert_eq!(s.env_cursor, 0);
+    assert_eq!(s.focus, Focus::Env);
 }
 
 #[test]
@@ -94,7 +144,6 @@ fn help_toggles_on_question_mark() {
     let mut s = state();
     step(&mut s, key('?'));
     assert!(s.help_open);
-    // any key closes
     step(&mut s, key('x'));
     assert!(!s.help_open);
 }
