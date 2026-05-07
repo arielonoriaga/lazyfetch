@@ -41,19 +41,21 @@ fn tab_cycles_focus() {
 }
 
 #[test]
-fn arrows_move_spatially() {
-    // Layout: Collections | Request (under URL)
-    //         Env         | Response
+fn arrows_move_spatially_outside_response() {
+    // Arrows = pane move everywhere except Response (where they scroll the cursor).
     let mut s = state();
     assert_eq!(s.focus, Focus::Collections);
     step(&mut s, ev(KeyCode::Right));
     assert_eq!(s.focus, Focus::Request);
     step(&mut s, ev(KeyCode::Down));
     assert_eq!(s.focus, Focus::Response);
+    // Now in Response: arrows scroll, Tab/Shift-Tab leave.
+    step(&mut s, ev(KeyCode::Down));
+    assert_eq!(s.focus, Focus::Response);
     step(&mut s, ev(KeyCode::Left));
-    assert_eq!(s.focus, Focus::Env);
-    step(&mut s, ev(KeyCode::Up));
-    assert_eq!(s.focus, Focus::Collections);
+    assert_eq!(s.focus, Focus::Response);
+    step(&mut s, ev(KeyCode::BackTab));
+    assert_eq!(s.focus, Focus::Request);
 }
 
 #[test]

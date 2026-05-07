@@ -123,7 +123,8 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
         (KeyCode::Char('k'), KeyModifiers::NONE) if state.focus == Focus::Response => {
             Action::CursorBy(-1)
         }
-        // Up/Down: keep as spatial nav (use j/k for line move when Response focused).
+        (KeyCode::Down, _) if state.focus == Focus::Response => Action::CursorBy(1),
+        (KeyCode::Up, _) if state.focus == Focus::Response => Action::CursorBy(-1),
         (KeyCode::Char('d'), KeyModifiers::CONTROL) if state.focus == Focus::Response => {
             Action::CursorBy(10)
         }
@@ -161,7 +162,8 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
         (KeyCode::Char('l'), KeyModifiers::NONE) if state.focus == Focus::Response => {
             Action::ColBy(1)
         }
-        // Arrow keys keep doing spatial pane move (vim h/l for column).
+        (KeyCode::Left, _) if state.focus == Focus::Response => Action::ColBy(-1),
+        (KeyCode::Right, _) if state.focus == Focus::Response => Action::ColBy(1),
         (KeyCode::Char('0'), _) if state.focus == Focus::Response => Action::ColLineStart,
         (KeyCode::Char('$'), _) if state.focus == Focus::Response => Action::ColLineEnd,
         (KeyCode::Char('w'), KeyModifiers::NONE) if state.focus == Focus::Response => {
