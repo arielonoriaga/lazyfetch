@@ -693,6 +693,9 @@ fn run_command(state: &mut AppState, cmd: &str) -> EnvDirty {
         }
         return EnvDirty::No;
     }
+    if let Some(rest) = cmd.strip_prefix("save ").map(str::trim) {
+        return run_save(state, rest);
+    }
     if let Some(name) = cmd.strip_prefix("method ").map(str::trim) {
         if let Ok(m) = name.to_ascii_uppercase().parse::<http::Method>() {
             state.method = m;
@@ -1098,6 +1101,54 @@ fn pretty_body_for_search(content_type: &str, body: &[u8]) -> String {
 fn looks_like_json(body: &[u8]) -> bool {
     let s = std::str::from_utf8(body).unwrap_or("").trim_start();
     s.starts_with('{') || s.starts_with('[')
+}
+
+fn run_save(state: &mut AppState, arg: &str) -> EnvDirty {
+    use lazyfetch_core::catalog::{Body, Request};
+    use lazyfetch_core::primitives::{Template, UrlTemplate};
+    use lazyfetch_storage::collection::FsCollectionRepo;
+
+    let (coll, name) = match arg.split_once('/') {
+        Some((c, n)) if !c.is_empty() && !n.is_empty() => (c, n),
+        _ => {
+            state.toast = Some("usage: :save <collection>/<name>".into());
+            return EnvDirty::No;
+        }
+    };
+    if state.url_buf.is_empty() {
+        state.toast = Some("URL is empty — type one in the URL pane first".into());
+        return EnvDirty::No;
+    }
+    let req = Request {
+        id: ulid::Ulid::new(),
+        name: name.to_string(),
+        method: state.method.clone(),
+        url: UrlTemplate(Template(state.url_buf.clone())),
+        query: vec![],
+        headers: vec![],
+        body: Body::None,
+        auth: None,
+        notes: None,
+        follow_redirects: true,
+        max_redirects: 10,
+        timeout_ms: None,
+    };
+    let repo = FsCollectionRepo::new(state.config_dir.join("collections"));
+    match repo.save_request(coll, &req) {
+        Ok(()) => {
+            state.toast = Some(format!("saved {}/{}", coll, name));
+            // Reload the collection so it shows up in the Collections pane.
+            if let Ok(c) = repo.load_by_name(coll) {
+                if let Some(idx) = state.collections.iter().position(|x| x.name == c.name) {
+                    state.collections[idx] = c;
+                } else {
+                    state.collections.push(c);
+                }
+            }
+        }
+        Err(e) => state.toast = Some(format!("save failed: {}", e)),
+    }
+    EnvDirty::No
 }
 
 const METHODS: &[&str] = &["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];

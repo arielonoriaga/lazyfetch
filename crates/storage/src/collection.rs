@@ -66,6 +66,39 @@ impl FsCollectionRepo {
         Ok(())
     }
 
+    /// Drop a single Request into `<root>/<coll>/requests/<name>.yaml`. Creates the
+    /// collection scaffold (`collection.yaml`, `requests/_folder.yaml`) if absent.
+    pub fn save_request(&self, coll_name: &str, req: &Request) -> std::io::Result<()> {
+        let coll_dir = self.root.join(Self::slug(coll_name));
+        let req_dir = coll_dir.join("requests");
+        std::fs::create_dir_all(&req_dir)?;
+
+        let coll_yaml = coll_dir.join("collection.yaml");
+        if !coll_yaml.exists() {
+            let header = serde_yaml::to_string(&CollectionHeader {
+                id: ulid::Ulid::new(),
+                name: coll_name.to_string(),
+                auth: None,
+                vars: vec![],
+            })
+            .map_err(io_err)?;
+            crate::atomic::write_atomic(&coll_yaml, header.as_bytes())?;
+        }
+        let folder_yaml = req_dir.join("_folder.yaml");
+        if !folder_yaml.exists() {
+            let meta = serde_yaml::to_string(&FolderHeader {
+                id: ulid::Ulid::new(),
+                name: "root".into(),
+                auth: None,
+            })
+            .map_err(io_err)?;
+            crate::atomic::write_atomic(&folder_yaml, meta.as_bytes())?;
+        }
+        let path = req_dir.join(format!("{}.yaml", Self::slug(&req.name)));
+        let yaml = serde_yaml::to_string(req).map_err(io_err)?;
+        crate::atomic::write_atomic(&path, yaml.as_bytes())
+    }
+
     pub fn load_by_name(&self, name: &str) -> std::io::Result<Collection> {
         let dir = self.root.join(Self::slug(name));
         let header: CollectionHeader =
