@@ -40,6 +40,9 @@ pub enum Action {
     CursorViewportMid,
     CursorViewportBot,
     PendingG,
+    JumpMatchingBrace,
+    JumpSiblingNext,
+    JumpSiblingPrev,
     EnterSearch,
     SearchChar(char),
     SearchBackspace,
@@ -141,6 +144,9 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
         (KeyCode::Char('H'), _) if state.focus == Focus::Response => Action::CursorViewportTop,
         (KeyCode::Char('M'), _) if state.focus == Focus::Response => Action::CursorViewportMid,
         (KeyCode::Char('L'), _) if state.focus == Focus::Response => Action::CursorViewportBot,
+        (KeyCode::Char('%'), _) if state.focus == Focus::Response => Action::JumpMatchingBrace,
+        (KeyCode::Char(']'), _) if state.focus == Focus::Response => Action::JumpSiblingNext,
+        (KeyCode::Char('['), _) if state.focus == Focus::Response => Action::JumpSiblingPrev,
         (KeyCode::Char('/'), _) if state.focus == Focus::Response => Action::EnterSearch,
         (KeyCode::Char('n'), KeyModifiers::NONE) if state.focus == Focus::Response => {
             Action::SearchNext
@@ -460,6 +466,27 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
             state.move_cursor_to(target);
             EnvDirty::No
         }
+        Action::JumpMatchingBrace => {
+            state.pending_g = false;
+            if let Some(target) = matching_brace_target(state) {
+                state.move_cursor_to(target);
+            }
+            EnvDirty::No
+        }
+        Action::JumpSiblingNext => {
+            state.pending_g = false;
+            if let Some(target) = sibling_target(state, 1) {
+                state.move_cursor_to(target);
+            }
+            EnvDirty::No
+        }
+        Action::JumpSiblingPrev => {
+            state.pending_g = false;
+            if let Some(target) = sibling_target(state, -1) {
+                state.move_cursor_to(target);
+            }
+            EnvDirty::No
+        }
         Action::EnterSearch => {
             state.mode = Mode::Search;
             state.search_buf.clear();
@@ -569,6 +596,109 @@ fn run_command(state: &mut AppState, cmd: &str) -> EnvDirty {
     }
     state.toast = Some(format!("unknown: {}", cmd));
     EnvDirty::No
+}
+
+/// Return the index of the line containing the brace that pairs with the first brace on the
+/// cursor line. Searches forward for opening braces, backward for closing braces. Counts
+/// inside string literals are ignored (basic heuristic — cursor lines in pretty JSON only).
+fn matching_brace_target(state: &AppState) -> Option<usize> {
+    let body = current_body(state)?;
+    let lines: Vec<&str> = body.lines().collect();
+    let cur = state.response_cursor.min(lines.len().saturating_sub(1));
+    let line = lines.get(cur)?;
+    let opens: u8 = line
+        .chars()
+        .map(|c| match c {
+            '{' | '[' => 1,
+            _ => 0,
+        })
+        .sum();
+    let closes: u8 = line
+        .chars()
+        .map(|c| match c {
+            '}' | ']' => 1,
+            _ => 0,
+        })
+        .sum();
+    if opens > closes {
+        // forward search for matching close
+        let mut depth: i32 = 0;
+        for (i, l) in lines.iter().enumerate().skip(cur) {
+            for c in l.chars() {
+                match c {
+                    '{' | '[' => depth += 1,
+                    '}' | ']' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            return Some(i);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        None
+    } else if closes > opens {
+        // backward search for matching open
+        let mut depth: i32 = 0;
+        for i in (0..=cur).rev() {
+            for c in lines[i].chars().rev() {
+                match c {
+                    '}' | ']' => depth += 1,
+                    '{' | '[' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            return Some(i);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        None
+    } else {
+        None
+    }
+}
+
+/// Walk forward (`dir=1`) or backward (`dir=-1`) to the next non-empty line at the same
+/// indent depth as the cursor line. Pretty-printed JSON sibling = same-indent line.
+fn sibling_target(state: &AppState, dir: i32) -> Option<usize> {
+    let body = current_body(state)?;
+    let lines: Vec<&str> = body.lines().collect();
+    let cur = state.response_cursor.min(lines.len().saturating_sub(1));
+    let depth = indent_of(lines.get(cur)?);
+    let n = lines.len();
+    let mut i = cur as i32 + dir;
+    while i >= 0 && (i as usize) < n {
+        let line = lines[i as usize];
+        if !line.trim().is_empty() && indent_of(line) == depth {
+            return Some(i as usize);
+        }
+        // If we hit a shallower line, the parent block ended — stop.
+        if !line.trim().is_empty() && indent_of(line) < depth {
+            return None;
+        }
+        i += dir;
+    }
+    None
+}
+
+fn indent_of(line: &str) -> usize {
+    line.chars().take_while(|c| *c == ' ').count()
+}
+
+fn current_body(state: &AppState) -> Option<String> {
+    let executed = state.last_response.as_ref()?;
+    let ct = executed
+        .response
+        .headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+        .map(|(_, v)| v.as_str())
+        .unwrap_or("");
+    let body = pretty_body_for_search(ct, &executed.response.body_bytes);
+    Some(executed.secrets.redact(&body))
 }
 
 /// Pretty-print body identically to layout::pretty_body so search line indices line up.
