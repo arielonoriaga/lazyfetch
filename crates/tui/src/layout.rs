@@ -10,6 +10,7 @@ use ratatui::Frame;
 #[derive(Default, Debug, Clone, Copy)]
 pub struct DrawInfo {
     pub response_height: u16,
+    pub response_width: u16,
     pub response_total_lines: usize,
 }
 
@@ -120,11 +121,12 @@ pub fn draw(f: &mut Frame, state: &AppState) -> DrawInfo {
 
     DrawInfo {
         response_height: resp_info.0,
-        response_total_lines: resp_info.1,
+        response_width: resp_info.1,
+        response_total_lines: resp_info.2,
     }
 }
 
-fn pane_response(f: &mut Frame, area: Rect, state: &AppState) -> (u16, usize) {
+fn pane_response(f: &mut Frame, area: Rect, state: &AppState) -> (u16, u16, usize) {
     let focused = state.focus == Focus::Response;
     let border_style = if focused {
         Style::default()
@@ -141,8 +143,10 @@ fn pane_response(f: &mut Frame, area: Rect, state: &AppState) -> (u16, usize) {
     f.render_widget(block, area);
     render_response_inner(f, inner, state);
     let body_height = inner.height.saturating_sub(2);
+    // Body width = pane inner width minus 2 columns for cursor margin.
+    let body_width = inner.width.saturating_sub(2);
     let total = compute_total_lines(state);
-    (body_height, total)
+    (body_height, body_width, total)
 }
 
 fn compute_total_lines(state: &AppState) -> usize {
@@ -218,17 +222,21 @@ fn draw_help(f: &mut Frame) {
         row("Ctrl-s", "send (any pane)"),
         Line::from(""),
         section("Response pane"),
-        row("j / k", "scroll line"),
+        row("j / k", "line up/down"),
+        row("h / l", "char left/right"),
+        row("0 / $", "line start / end"),
+        row("w / b", "word forward / back"),
         row("Ctrl-d / Ctrl-u", "half page"),
         row("Ctrl-f / Ctrl-b", "full page"),
         row("gg / G", "top / bottom"),
         row("{ / }", "prev / next blank line"),
         row("H / M / L", "viewport top / mid / bottom"),
-        row("%", "jump to matching brace { } [ ]"),
-        row("] / [", "next / prev sibling block (same indent)"),
-        row("/", "search"),
-        row("n / N", "next / prev match"),
-        row("Esc", "clear search"),
+        row("%", "matching brace { } [ ]"),
+        row("] / [", "next / prev sibling block"),
+        row("v", "toggle visual select"),
+        row("y", "yank selection (or line) → clipboard"),
+        row("/  n  N", "search · next · prev"),
+        row("Esc", "exit visual / clear search"),
         Line::from(""),
         section("URL bar"),
         row("type / Bksp", "edit URL inline"),
@@ -416,33 +424,177 @@ fn render_response_inner(f: &mut Frame, area: Rect, state: &AppState) {
     let start = scroll as usize;
     let end = (start + body_height as usize).min(highlighted.len());
 
+    // Apply selection highlight (visual mode).
+    let cursor_line = state.response_cursor;
+    let cursor_col = state.response_col;
+    let selection = state.visual_anchor.map(|(al, ac)| {
+        let s = (al, ac);
+        let e = (cursor_line, cursor_col);
+        if s <= e {
+            (s, e)
+        } else {
+            (e, s)
+        }
+    });
+
+    let hscroll = state.response_hscroll as usize;
+    let body_width = area.width.saturating_sub(2) as usize;
+
     // Mark cursor line with reverse-video left margin.
-    let cursor = state.response_cursor;
-    if cursor < highlighted.len() {
+    if cursor_line < highlighted.len() {
         let marker = Span::styled(
             "▌ ",
             Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
         );
-        highlighted[cursor].insert(0, marker);
+        highlighted[cursor_line].insert(0, marker);
     }
-    // Pad non-cursor lines with two spaces so columns align.
     for (i, line) in highlighted.iter_mut().enumerate() {
-        if i != cursor {
+        if i != cursor_line {
             line.insert(0, Span::raw("  "));
         }
     }
 
     let mut lines: Vec<Line> = header;
-    for spans in &highlighted[start..end] {
-        lines.push(Line::from(spans.clone()));
+    for (i, spans) in highlighted[start..end].iter().enumerate() {
+        let line_idx = start + i;
+        let mut spans = spans.clone();
+
+        // Apply visual selection highlight in-place
+        if let Some(((sl, sc), (el, ec))) = selection {
+            if line_idx >= sl && line_idx <= el {
+                let from = if line_idx == sl { sc } else { 0 };
+                let to_inclusive = if line_idx == el { ec } else { usize::MAX };
+                spans = highlight_range(spans, from + 2, to_inclusive.saturating_add(2));
+                // +2 for the left margin we just inserted.
+            }
+        }
+
+        // Horizontal slice: drop the first `hscroll` chars (after the 2-char margin),
+        // then truncate to `body_width + 2`.
+        let total_take = body_width + 2;
+        spans = slice_spans(spans, hscroll, total_take);
+
+        // Place cursor column marker on cursor line (faint underline).
+        if line_idx == cursor_line {
+            spans = mark_cursor_col(spans, cursor_col.saturating_sub(hscroll) + 2);
+        }
+
+        lines.push(Line::from(spans));
     }
 
-    f.render_widget(
-        Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false }),
-        area,
-    );
+    f.render_widget(Paragraph::new(Text::from(lines)), area);
+}
+
+/// Highlight chars in `[from, to_inclusive]` columns by splitting any covering Span and
+/// applying reverse-video on top of the original style.
+fn highlight_range(
+    spans: Vec<Span<'static>>,
+    from: usize,
+    to_inclusive: usize,
+) -> Vec<Span<'static>> {
+    let highlight = Style::default().add_modifier(Modifier::REVERSED);
+    let mut out: Vec<Span> = Vec::with_capacity(spans.len() + 2);
+    let mut col = 0usize;
+    for span in spans {
+        let style = span.style;
+        let s = span.content.into_owned();
+        let len = s.chars().count();
+        let span_end = col + len;
+        if span_end <= from || col > to_inclusive {
+            out.push(Span::styled(s, style));
+        } else {
+            let chars: Vec<char> = s.chars().collect();
+            let mut i = 0;
+            while i < chars.len() {
+                let abs = col + i;
+                let in_range = abs >= from && abs <= to_inclusive;
+                let mut j = i + 1;
+                while j < chars.len() {
+                    let abs_j = col + j;
+                    let j_in = abs_j >= from && abs_j <= to_inclusive;
+                    if j_in != in_range {
+                        break;
+                    }
+                    j += 1;
+                }
+                let chunk: String = chars[i..j].iter().collect();
+                if in_range {
+                    out.push(Span::styled(chunk, style.patch(highlight)));
+                } else {
+                    out.push(Span::styled(chunk, style));
+                }
+                i = j;
+            }
+        }
+        col = span_end;
+    }
+    out
+}
+
+/// Slice spans horizontally: drop first `skip` chars, keep `take` chars total.
+fn slice_spans(spans: Vec<Span<'static>>, skip: usize, take: usize) -> Vec<Span<'static>> {
+    if take == 0 {
+        return vec![];
+    }
+    let mut out: Vec<Span> = vec![];
+    let mut dropped = 0usize;
+    let mut taken = 0usize;
+    for span in spans {
+        if taken >= take {
+            break;
+        }
+        let style = span.style;
+        let s = span.content.into_owned();
+        let len = s.chars().count();
+        if dropped + len <= skip {
+            dropped += len;
+            continue;
+        }
+        let local_skip = skip.saturating_sub(dropped);
+        dropped = skip;
+        let chars: Vec<char> = s.chars().skip(local_skip).collect();
+        let want = (take - taken).min(chars.len());
+        if want == 0 {
+            continue;
+        }
+        let chunk: String = chars[..want].iter().collect();
+        out.push(Span::styled(chunk, style));
+        taken += want;
+    }
+    out
+}
+
+/// Underline the character at `col` on the cursor line (visible focus indicator for
+/// horizontal motion). If the line is shorter than `col`, no-op.
+fn mark_cursor_col(spans: Vec<Span<'static>>, col: usize) -> Vec<Span<'static>> {
+    let underline = Style::default().add_modifier(Modifier::UNDERLINED);
+    let mut out: Vec<Span> = Vec::with_capacity(spans.len() + 1);
+    let mut c = 0usize;
+    for span in spans {
+        let style = span.style;
+        let s = span.content.into_owned();
+        let len = s.chars().count();
+        if c + len <= col || c > col {
+            out.push(Span::styled(s, style));
+        } else {
+            let chars: Vec<char> = s.chars().collect();
+            let local = col - c;
+            if local > 0 {
+                let pre: String = chars[..local].iter().collect();
+                out.push(Span::styled(pre, style));
+            }
+            let mark: String = chars[local..local + 1].iter().collect();
+            out.push(Span::styled(mark, style.patch(underline)));
+            if local + 1 < chars.len() {
+                let post: String = chars[local + 1..].iter().collect();
+                out.push(Span::styled(post, style));
+            }
+        }
+        c += len;
+    }
+    out
 }
 
 /// Format a byte count with binary units (KiB, MiB, GiB) and one decimal of precision.

@@ -117,10 +117,14 @@ pub struct AppState {
     pub last_error: Option<String>,
     pub inflight: Option<Receiver<Result<Executed, ExecError>>>,
     pub response_scroll: u16,
+    pub response_hscroll: u16,
     pub response_cursor: usize,
+    pub response_col: usize,
     pub response_height: u16,
+    pub response_width: u16,
     pub response_total_lines: usize,
     pub pending_g: bool,
+    pub visual_anchor: Option<(usize, usize)>,
     pub search_buf: String,
     pub search_active: Option<String>,
     pub search_match_lines: Vec<usize>,
@@ -148,10 +152,14 @@ impl AppState {
             last_error: None,
             inflight: None,
             response_scroll: 0,
+            response_hscroll: 0,
             response_cursor: 0,
+            response_col: 0,
             response_height: 1,
+            response_width: 1,
             response_total_lines: 0,
             pending_g: false,
+            visual_anchor: None,
             search_buf: String::new(),
             search_active: None,
             search_match_lines: vec![],
@@ -245,12 +253,32 @@ impl AppState {
         } else if self.response_cursor >= scroll + h {
             self.response_scroll = (self.response_cursor + 1 - h) as u16;
         }
+        self.response_col = 0;
+        self.response_hscroll = 0;
     }
 
     pub fn move_cursor_by(&mut self, delta: i32) {
         let cur = self.response_cursor as i32 + delta;
         let cur = cur.max(0) as usize;
         self.move_cursor_to(cur);
+    }
+
+    /// Move cursor column on the current line; horizontal scroll follows.
+    pub fn move_col_to(&mut self, col: usize, line_len: usize) {
+        self.response_col = col.min(line_len.saturating_sub(1));
+        let w = self.response_width.max(1) as usize;
+        let hs = self.response_hscroll as usize;
+        if self.response_col < hs {
+            self.response_hscroll = self.response_col as u16;
+        } else if self.response_col >= hs + w {
+            self.response_hscroll = (self.response_col + 1 - w) as u16;
+        }
+    }
+
+    pub fn move_col_by(&mut self, delta: i32, line_len: usize) {
+        let c = self.response_col as i32 + delta;
+        let c = c.max(0) as usize;
+        self.move_col_to(c, line_len);
     }
 
     pub fn env_var_at(&self, i: usize) -> Option<(&String, &str, bool)> {

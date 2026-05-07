@@ -43,6 +43,14 @@ pub enum Action {
     JumpMatchingBrace,
     JumpSiblingNext,
     JumpSiblingPrev,
+    ColBy(i32),
+    ColLineStart,
+    ColLineEnd,
+    WordNext,
+    WordPrev,
+    ToggleVisual,
+    YankSelection,
+    EscapeVisual,
     EnterSearch,
     SearchChar(char),
     SearchBackspace,
@@ -115,8 +123,7 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
         (KeyCode::Char('k'), KeyModifiers::NONE) if state.focus == Focus::Response => {
             Action::CursorBy(-1)
         }
-        (KeyCode::Down, _) if state.focus == Focus::Response => Action::CursorBy(1),
-        (KeyCode::Up, _) if state.focus == Focus::Response => Action::CursorBy(-1),
+        // Up/Down: keep as spatial nav (use j/k for line move when Response focused).
         (KeyCode::Char('d'), KeyModifiers::CONTROL) if state.focus == Focus::Response => {
             Action::CursorBy(10)
         }
@@ -147,6 +154,31 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
         (KeyCode::Char('%'), _) if state.focus == Focus::Response => Action::JumpMatchingBrace,
         (KeyCode::Char(']'), _) if state.focus == Focus::Response => Action::JumpSiblingNext,
         (KeyCode::Char('['), _) if state.focus == Focus::Response => Action::JumpSiblingPrev,
+        // Horizontal cursor (Response only — overrides spatial h/l)
+        (KeyCode::Char('h'), KeyModifiers::NONE) if state.focus == Focus::Response => {
+            Action::ColBy(-1)
+        }
+        (KeyCode::Char('l'), KeyModifiers::NONE) if state.focus == Focus::Response => {
+            Action::ColBy(1)
+        }
+        // Arrow keys keep doing spatial pane move (vim h/l for column).
+        (KeyCode::Char('0'), _) if state.focus == Focus::Response => Action::ColLineStart,
+        (KeyCode::Char('$'), _) if state.focus == Focus::Response => Action::ColLineEnd,
+        (KeyCode::Char('w'), KeyModifiers::NONE) if state.focus == Focus::Response => {
+            Action::WordNext
+        }
+        (KeyCode::Char('b'), KeyModifiers::NONE) if state.focus == Focus::Response => {
+            Action::WordPrev
+        }
+        (KeyCode::Char('v'), KeyModifiers::NONE) if state.focus == Focus::Response => {
+            Action::ToggleVisual
+        }
+        (KeyCode::Char('y'), KeyModifiers::NONE) if state.focus == Focus::Response => {
+            Action::YankSelection
+        }
+        (KeyCode::Esc, _) if state.focus == Focus::Response && state.visual_anchor.is_some() => {
+            Action::EscapeVisual
+        }
         (KeyCode::Char('/'), _) if state.focus == Focus::Response => Action::EnterSearch,
         (KeyCode::Char('n'), KeyModifiers::NONE) if state.focus == Focus::Response => {
             Action::SearchNext
@@ -154,12 +186,11 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
         (KeyCode::Char('N'), _) if state.focus == Focus::Response => Action::SearchPrev,
         // Send (after Response keys so 's' doesn't fire while focused there — actually allow s globally below)
         (KeyCode::Char('s'), KeyModifiers::NONE) => Action::SendRequest,
-        (KeyCode::Left, _) | (KeyCode::Char('h'), KeyModifiers::NONE) => {
-            Action::FocusDir(Dir::Left)
-        }
-        (KeyCode::Right, _) | (KeyCode::Char('l'), KeyModifiers::NONE) => {
-            Action::FocusDir(Dir::Right)
-        }
+        // Spatial pane move (only fires when not handled by per-pane block above).
+        (KeyCode::Char('h'), KeyModifiers::NONE) => Action::FocusDir(Dir::Left),
+        (KeyCode::Char('l'), KeyModifiers::NONE) => Action::FocusDir(Dir::Right),
+        (KeyCode::Left, _) => Action::FocusDir(Dir::Left),
+        (KeyCode::Right, _) => Action::FocusDir(Dir::Right),
         (KeyCode::Up, _) => Action::FocusDir(Dir::Up),
         (KeyCode::Down, _) => Action::FocusDir(Dir::Down),
         _ if state.focus == Focus::Env => dispatch_env(ev),
@@ -487,6 +518,62 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
             }
             EnvDirty::No
         }
+        Action::ColBy(d) => {
+            let len = current_line_len(state);
+            state.move_col_by(d, len);
+            EnvDirty::No
+        }
+        Action::ColLineStart => {
+            let len = current_line_len(state);
+            state.move_col_to(0, len);
+            EnvDirty::No
+        }
+        Action::ColLineEnd => {
+            let len = current_line_len(state);
+            #[allow(clippy::implicit_saturating_sub)]
+            state.move_col_to(if len > 0 { len - 1 } else { 0 }, len);
+            EnvDirty::No
+        }
+        Action::WordNext => {
+            if let Some((line, col)) = next_word_pos(state) {
+                let len = current_line_len(state);
+                state.response_cursor = line;
+                state.move_col_to(col, len);
+            }
+            EnvDirty::No
+        }
+        Action::WordPrev => {
+            if let Some((line, col)) = prev_word_pos(state) {
+                let len = current_line_len(state);
+                state.response_cursor = line;
+                state.move_col_to(col, len);
+            }
+            EnvDirty::No
+        }
+        Action::ToggleVisual => {
+            if state.visual_anchor.is_some() {
+                state.visual_anchor = None;
+                state.toast = Some("visual off".into());
+            } else {
+                state.visual_anchor = Some((state.response_cursor, state.response_col));
+                state.toast = Some("-- VISUAL --".into());
+            }
+            EnvDirty::No
+        }
+        Action::EscapeVisual => {
+            state.visual_anchor = None;
+            state.toast = Some("visual off".into());
+            EnvDirty::No
+        }
+        Action::YankSelection => {
+            let text = selection_text(state).unwrap_or_else(|| current_line_text(state));
+            match copy_to_clipboard(&text) {
+                Ok(()) => state.toast = Some(format!("yanked {} chars", text.len())),
+                Err(e) => state.toast = Some(format!("yank failed: {}", e)),
+            }
+            state.visual_anchor = None;
+            EnvDirty::No
+        }
         Action::EnterSearch => {
             state.mode = Mode::Search;
             state.search_buf.clear();
@@ -699,6 +786,127 @@ fn current_body(state: &AppState) -> Option<String> {
         .unwrap_or("");
     let body = pretty_body_for_search(ct, &executed.response.body_bytes);
     Some(executed.secrets.redact(&body))
+}
+
+fn current_line_len(state: &AppState) -> usize {
+    current_body(state)
+        .and_then(|b| {
+            b.lines()
+                .nth(state.response_cursor)
+                .map(|l| l.chars().count())
+        })
+        .unwrap_or(0)
+}
+
+fn current_line_text(state: &AppState) -> String {
+    current_body(state)
+        .and_then(|b| b.lines().nth(state.response_cursor).map(String::from))
+        .unwrap_or_default()
+}
+
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+/// Find the next word boundary (vim-style `w`).
+fn next_word_pos(state: &AppState) -> Option<(usize, usize)> {
+    let body = current_body(state)?;
+    let lines: Vec<&str> = body.lines().collect();
+    let cur_line = state.response_cursor;
+    let cur_col = state.response_col;
+    if cur_line >= lines.len() {
+        return None;
+    }
+    let chars: Vec<char> = lines[cur_line].chars().collect();
+    let mut i = cur_col;
+    let was_word = chars.get(i).map(|c| is_word_char(*c)).unwrap_or(false);
+    // Skip current run of same-class chars
+    while i < chars.len()
+        && chars.get(i).map(|c| is_word_char(*c)).unwrap_or(false) == was_word
+        && !chars.get(i).map(|c| c.is_whitespace()).unwrap_or(false)
+    {
+        i += 1;
+    }
+    while i < chars.len() && chars[i].is_whitespace() {
+        i += 1;
+    }
+    if i < chars.len() {
+        Some((cur_line, i))
+    } else if cur_line + 1 < lines.len() {
+        Some((cur_line + 1, 0))
+    } else {
+        None
+    }
+}
+
+fn prev_word_pos(state: &AppState) -> Option<(usize, usize)> {
+    let body = current_body(state)?;
+    let lines: Vec<&str> = body.lines().collect();
+    let mut cur_line = state.response_cursor;
+    if cur_line >= lines.len() {
+        return None;
+    }
+    let mut chars: Vec<char> = lines[cur_line].chars().collect();
+    let mut i = state.response_col;
+    if i == 0 {
+        if cur_line == 0 {
+            return None;
+        }
+        cur_line -= 1;
+        chars = lines[cur_line].chars().collect();
+        i = chars.len();
+    }
+    i = i.saturating_sub(1);
+    while i > 0 && chars.get(i).map(|c| c.is_whitespace()).unwrap_or(false) {
+        i -= 1;
+    }
+    let was_word = chars.get(i).map(|c| is_word_char(*c)).unwrap_or(false);
+    while i > 0
+        && chars
+            .get(i - 1)
+            .map(|c| is_word_char(*c) == was_word && !c.is_whitespace())
+            .unwrap_or(false)
+    {
+        i -= 1;
+    }
+    Some((cur_line, i))
+}
+
+fn selection_text(state: &AppState) -> Option<String> {
+    let anchor = state.visual_anchor?;
+    let body = current_body(state)?;
+    let lines: Vec<&str> = body.lines().collect();
+    let (a, b) = (
+        (anchor.0, anchor.1),
+        (state.response_cursor, state.response_col),
+    );
+    let (start, end) = if (a.0, a.1) <= (b.0, b.1) {
+        (a, b)
+    } else {
+        (b, a)
+    };
+    let mut out = String::new();
+    for line in start.0..=end.0 {
+        let chars: Vec<char> = lines.get(line)?.chars().collect();
+        let from = if line == start.0 { start.1 } else { 0 };
+        let to = if line == end.0 {
+            (end.1 + 1).min(chars.len())
+        } else {
+            chars.len()
+        };
+        if from < chars.len() {
+            out.extend(&chars[from..to.min(chars.len())]);
+        }
+        if line < end.0 {
+            out.push('\n');
+        }
+    }
+    Some(out)
+}
+
+fn copy_to_clipboard(s: &str) -> Result<(), String> {
+    let mut cb = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    cb.set_text(s.to_string()).map_err(|e| e.to_string())
 }
 
 /// Pretty-print body identically to layout::pretty_body so search line indices line up.

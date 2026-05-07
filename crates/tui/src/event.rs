@@ -18,6 +18,7 @@ pub fn run(mut state: AppState, rt: Handle) -> anyhow::Result<()> {
             info = draw(f, &state);
         })?;
         state.response_height = info.response_height;
+        state.response_width = info.response_width;
         state.response_total_lines = info.response_total_lines;
 
         // Poll inflight result.
