@@ -333,9 +333,9 @@ fn render_response_inner(f: &mut Frame, area: Rect, state: &AppState, _focused: 
             ),
             Span::styled(
                 format!(
-                    "· {}ms · {}B · {}",
+                    "· {}ms · {} · {}",
                     resp.elapsed.as_millis(),
-                    resp.size,
+                    human_bytes(resp.size),
                     kind_label
                 ),
                 Style::default().fg(Color::DarkGray),
@@ -383,6 +383,22 @@ fn render_response_inner(f: &mut Frame, area: Rect, state: &AppState, _focused: 
         Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false }),
         area,
     );
+}
+
+/// Format a byte count with binary units (KiB, MiB, GiB) and one decimal of precision.
+fn human_bytes(n: u64) -> String {
+    const KIB: u64 = 1024;
+    const MIB: u64 = KIB * 1024;
+    const GIB: u64 = MIB * 1024;
+    if n < KIB {
+        format!("{} B", n)
+    } else if n < MIB {
+        format!("{:.1} KiB", n as f64 / KIB as f64)
+    } else if n < GIB {
+        format!("{:.1} MiB", n as f64 / MIB as f64)
+    } else {
+        format!("{:.2} GiB", n as f64 / GIB as f64)
+    }
 }
 
 /// Returns a label describing how the body was rendered ("json", "raw"), or `None` if unknown.
@@ -578,4 +594,19 @@ fn empty(f: &mut Frame, area: Rect, headline: &str, hints: &[&str]) {
         .alignment(Alignment::Left)
         .wrap(Wrap { trim: false });
     f.render_widget(p, area);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::human_bytes;
+
+    #[test]
+    fn formats_bytes() {
+        assert_eq!(human_bytes(0), "0 B");
+        assert_eq!(human_bytes(512), "512 B");
+        assert_eq!(human_bytes(1024), "1.0 KiB");
+        assert_eq!(human_bytes(1536), "1.5 KiB");
+        assert_eq!(human_bytes(1024 * 1024), "1.0 MiB");
+        assert_eq!(human_bytes(1024 * 1024 * 1024), "1.00 GiB");
+    }
 }
