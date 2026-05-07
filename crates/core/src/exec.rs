@@ -111,11 +111,9 @@ pub async fn execute(
         follow_redirects: req.follow_redirects,
         max_redirects: req.max_redirects,
     };
-    if let Some(spec) = crate::auth::effective_auth(
-        req.auth.as_ref(),
-        auth_chain.folders,
-        auth_chain.collection,
-    ) {
+    if let Some(spec) =
+        crate::auth::effective_auth(req.auth.as_ref(), auth_chain.folders, auth_chain.collection)
+    {
         resolver
             .apply(spec, ctx, clock, cache, &mut wire, &mut reg)
             .await?;
@@ -129,11 +127,7 @@ pub async fn execute(
     })
 }
 
-fn render_body(
-    b: &Body,
-    ctx: &ResolveCtx,
-    reg: &mut SecretRegistry,
-) -> Result<Vec<u8>, CoreError> {
+fn render_body(b: &Body, ctx: &ResolveCtx, reg: &mut SecretRegistry) -> Result<Vec<u8>, CoreError> {
     Ok(match b {
         Body::None => Vec::new(),
         Body::Raw { text, .. } | Body::Json(text) => {

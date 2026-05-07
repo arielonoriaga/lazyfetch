@@ -34,9 +34,11 @@ async fn main() -> anyhow::Result<()> {
     match cli.cmd {
         Some(Cmd::Run(a)) => run::run(a).await,
         Some(Cmd::ImportPostman(a)) => import::run(a),
-        None => tokio::task::spawn_blocking(|| {
-            lazyfetch_tui::event::run(lazyfetch_tui::app::AppState::new())
-        })
-        .await?,
+        None => {
+            tokio::task::spawn_blocking(|| {
+                lazyfetch_tui::event::run(lazyfetch_tui::app::AppState::new())
+            })
+            .await?
+        }
     }
 }

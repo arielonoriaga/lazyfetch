@@ -137,7 +137,7 @@ pub fn effective_auth<'a>(
     }
     for a in folder_chain {
         if !matches!(a, AuthSpec::Inherit) {
-            return collapse(*a);
+            return collapse(a);
         }
     }
     coll_auth.and_then(collapse)

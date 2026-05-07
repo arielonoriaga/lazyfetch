@@ -28,9 +28,10 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     pane(f, right[0], "Request", Focus::Request, state);
     pane(f, right[1], "Response", Focus::Response, state);
 
-    let status =
-        Paragraph::new(Line::from(":send  /search  e edit  s send  S save  ? help  q quit"))
-            .style(Style::default().fg(Color::DarkGray));
+    let status = Paragraph::new(Line::from(
+        ":send  /search  e edit  s send  S save  ? help  q quit",
+    ))
+    .style(Style::default().fg(Color::DarkGray));
     f.render_widget(status, outer[1]);
 }
 

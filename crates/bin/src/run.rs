@@ -27,9 +27,7 @@ pub struct RunArgs {
 }
 
 pub async fn run(args: RunArgs) -> Result<()> {
-    let cfg = args
-        .config_dir
-        .unwrap_or_else(default_config_dir);
+    let cfg = args.config_dir.unwrap_or_else(default_config_dir);
     let segments: Vec<&str> = args.request_path.split('/').collect();
     if segments.len() < 2 {
         return Err(anyhow!(

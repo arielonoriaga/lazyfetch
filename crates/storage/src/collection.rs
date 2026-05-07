@@ -56,7 +56,10 @@ impl FsCollectionRepo {
                 Item::Folder(sub) => Self::save_folder(&dir.join(Self::slug(&sub.name)), sub)?,
                 Item::Request(r) => {
                     let y = serde_yaml::to_string(r).map_err(io_err)?;
-                    write_atomic(&dir.join(format!("{}.yaml", Self::slug(&r.name))), y.as_bytes())?;
+                    write_atomic(
+                        &dir.join(format!("{}.yaml", Self::slug(&r.name))),
+                        y.as_bytes(),
+                    )?;
                 }
             }
         }

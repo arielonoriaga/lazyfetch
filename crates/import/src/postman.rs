@@ -250,8 +250,8 @@ struct PmInfo {
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum PmItem {
-    Request(PmRequestItem),
-    Folder(PmFolder),
+    Request(Box<PmRequestItem>),
+    Folder(Box<PmFolder>),
 }
 
 #[derive(Debug, Deserialize)]
