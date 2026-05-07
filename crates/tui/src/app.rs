@@ -75,6 +75,7 @@ pub struct AppState {
     pub insert_buf: Option<InsertBuf>,
     pub command_buf: String,
     pub toast: Option<String>,
+    pub help_open: bool,
     pub should_quit: bool,
 }
 
@@ -91,6 +92,7 @@ impl AppState {
             insert_buf: None,
             command_buf: String::new(),
             toast: None,
+            help_open: false,
             should_quit: false,
         }
     }

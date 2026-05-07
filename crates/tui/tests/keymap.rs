@@ -90,6 +90,16 @@ fn env_delete_var() {
 }
 
 #[test]
+fn help_toggles_on_question_mark() {
+    let mut s = state();
+    step(&mut s, key('?'));
+    assert!(s.help_open);
+    // any key closes
+    step(&mut s, key('x'));
+    assert!(!s.help_open);
+}
+
+#[test]
 fn command_env_switch() {
     let mut s = state();
     use lazyfetch_core::env::Environment;

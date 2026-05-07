@@ -21,10 +21,18 @@ pub enum Action {
     InsertNextField,
     InsertSubmit,
     InsertCancel,
+    ToggleHelp,
+    CloseHelp,
     NoOp,
 }
 
 pub fn dispatch(state: &AppState, ev: KeyEvent) -> Action {
+    if state.help_open {
+        return match (ev.code, ev.modifiers) {
+            (KeyCode::Char('c'), KeyModifiers::CONTROL) => Action::Quit,
+            _ => Action::CloseHelp,
+        };
+    }
     match state.mode {
         Mode::Normal => dispatch_normal(state, ev),
         Mode::Command => dispatch_command(ev),
@@ -39,6 +47,7 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
         (KeyCode::Tab, _) => Action::FocusNext,
         (KeyCode::BackTab, _) => Action::FocusPrev,
         (KeyCode::Char(':'), KeyModifiers::NONE) => Action::EnterCommand,
+        (KeyCode::Char('?'), _) => Action::ToggleHelp,
         _ if state.focus == Focus::Env => dispatch_env(ev),
         _ => Action::NoOp,
     }
@@ -194,6 +203,14 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
             } else {
                 state.mode = Mode::Normal;
             }
+            EnvDirty::No
+        }
+        Action::ToggleHelp => {
+            state.help_open = !state.help_open;
+            EnvDirty::No
+        }
+        Action::CloseHelp => {
+            state.help_open = false;
             EnvDirty::No
         }
         Action::NoOp => EnvDirty::No,

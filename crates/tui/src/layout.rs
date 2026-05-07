@@ -79,6 +79,88 @@ pub fn draw(f: &mut Frame, state: &AppState) {
     let status =
         Paragraph::new(Line::from(status_text)).style(Style::default().fg(Color::DarkGray));
     f.render_widget(status, outer[2]);
+
+    if state.help_open {
+        draw_help(f);
+    }
+}
+
+fn draw_help(f: &mut Frame) {
+    use ratatui::widgets::Clear;
+
+    let area = f.area();
+    let w = area.width.min(72);
+    let h = area.height.min(28);
+    let x = area.x + (area.width.saturating_sub(w)) / 2;
+    let y = area.y + (area.height.saturating_sub(h)) / 2;
+    let popup = Rect {
+        x,
+        y,
+        width: w,
+        height: h,
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Help — keyboard shortcuts ")
+        .border_style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        );
+    let inner = block.inner(popup);
+    f.render_widget(Clear, popup);
+    f.render_widget(block, popup);
+
+    let dim = Style::default().fg(Color::DarkGray);
+    let kw = Style::default()
+        .fg(Color::Yellow)
+        .add_modifier(Modifier::BOLD);
+    let key = |k: &str| Span::styled(format!("{:<14}", k), kw);
+    let desc = |d: &str| Span::styled(d.to_string(), Style::default().fg(Color::Gray));
+    let section = |s: &str| {
+        Line::from(Span::styled(
+            s.to_string(),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ))
+    };
+    let row = |k: &str, d: &str| Line::from(vec![Span::raw("  "), key(k), desc(d)]);
+
+    let lines: Vec<Line> = vec![
+        section("Global"),
+        row("Tab / S-Tab", "cycle pane focus"),
+        row("?", "toggle this help"),
+        row(":", "command mode"),
+        row("q  /  C-c", "quit"),
+        Line::from(""),
+        section("Env pane"),
+        row("j / k", "move row cursor (↑/↓ also)"),
+        row("a", "add variable"),
+        row("A", "add secret variable"),
+        row("m", "toggle secret on selected row"),
+        row("d", "delete selected row"),
+        Line::from(""),
+        section("Insert mode  (a / A)"),
+        row("Tab", "swap key ↔ value field"),
+        row("Enter", "commit, save to disk"),
+        row("Esc", "cancel"),
+        Line::from(""),
+        section("Command mode  (:)"),
+        row(":env <name>", "switch active environment"),
+        row(":q", "quit"),
+        row("Esc", "cancel"),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Press any key to close",
+            dim.add_modifier(Modifier::ITALIC),
+        )),
+    ];
+    f.render_widget(
+        Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false }),
+        inner,
+    );
 }
 
 fn pane(f: &mut Frame, area: Rect, title: &str, my: Focus, state: &AppState) {
