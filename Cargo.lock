@@ -1222,6 +1222,7 @@ dependencies = [
  "lazyfetch-storage",
  "ratatui",
  "secrecy",
+ "serde_json",
  "tokio",
  "ulid",
 ]

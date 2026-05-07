@@ -17,6 +17,7 @@ secrecy           = { workspace = true }
 ulid              = { workspace = true }
 http              = { workspace = true }
 tokio             = { workspace = true }
+serde_json        = { workspace = true }
 
 [dev-dependencies]
 insta = "1"

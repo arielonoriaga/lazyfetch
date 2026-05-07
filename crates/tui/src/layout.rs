@@ -281,6 +281,15 @@ fn render_response(f: &mut Frame, area: Rect, state: &AppState) {
         5 => Color::Red,
         _ => Color::Gray,
     };
+    let content_type = resp
+        .headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+        .map(|(_, v)| v.as_str())
+        .unwrap_or("");
+
+    let kind_label = render_kind(content_type, &resp.body_bytes).unwrap_or("raw");
+
     let mut lines: Vec<Line> = vec![Line::from(vec![
         Span::styled(
             format!("{} ", resp.status),
@@ -289,13 +298,19 @@ fn render_response(f: &mut Frame, area: Rect, state: &AppState) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            format!("· {}ms · {}B", resp.elapsed.as_millis(), resp.size),
+            format!(
+                "· {}ms · {}B · {}",
+                resp.elapsed.as_millis(),
+                resp.size,
+                kind_label
+            ),
             Style::default().fg(Color::DarkGray),
         ),
     ])];
     lines.push(Line::from(""));
-    let body = String::from_utf8_lossy(&resp.body_bytes);
-    let body = executed.secrets.redact(&body);
+
+    let body_text = pretty_body(content_type, &resp.body_bytes);
+    let body = executed.secrets.redact(&body_text);
     let max = area.height.saturating_sub(3) as usize;
     for line in body.lines().take(max) {
         lines.push(Line::from(line.to_string()));
@@ -304,6 +319,41 @@ fn render_response(f: &mut Frame, area: Rect, state: &AppState) {
         Paragraph::new(Text::from(lines)).wrap(Wrap { trim: false }),
         area,
     );
+}
+
+/// Returns a label describing how the body was rendered ("json", "raw"), or `None` if unknown.
+fn render_kind(content_type: &str, body: &[u8]) -> Option<&'static str> {
+    let ct = content_type.to_ascii_lowercase();
+    if ct.contains("json") || looks_like_json(body) {
+        Some("json")
+    } else if ct.contains("xml") || ct.contains("html") {
+        Some("xml/html")
+    } else if ct.starts_with("text/") {
+        Some("text")
+    } else if !body.is_empty() {
+        Some("raw")
+    } else {
+        None
+    }
+}
+
+fn looks_like_json(body: &[u8]) -> bool {
+    let s = std::str::from_utf8(body).unwrap_or("").trim_start();
+    s.starts_with('{') || s.starts_with('[')
+}
+
+/// JSON → 2-space pretty print via serde_json.
+/// Other content types → return as-is (UTF-8 lossy).
+fn pretty_body(content_type: &str, body: &[u8]) -> String {
+    let ct = content_type.to_ascii_lowercase();
+    if ct.contains("json") || looks_like_json(body) {
+        if let Ok(v) = serde_json::from_slice::<serde_json::Value>(body) {
+            if let Ok(pretty) = serde_json::to_string_pretty(&v) {
+                return pretty;
+            }
+        }
+    }
+    String::from_utf8_lossy(body).into_owned()
 }
 
 fn render_url_bar(f: &mut Frame, area: Rect, state: &AppState) {
