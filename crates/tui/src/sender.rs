@@ -15,7 +15,6 @@ use ulid::Ulid;
 /// Build a `Request` from the current TUI state and dispatch it on the tokio runtime.
 /// Returns a sync receiver the event loop polls each tick.
 pub fn dispatch(state: &AppState, rt: Handle) -> mpsc::Receiver<Result<Executed, ExecError>> {
-    let (tx, rx) = mpsc::channel();
     let req = Request {
         id: Ulid::new(),
         name: "ad-hoc".into(),
@@ -30,6 +29,18 @@ pub fn dispatch(state: &AppState, rt: Handle) -> mpsc::Receiver<Result<Executed,
         max_redirects: 10,
         timeout_ms: None,
     };
+    dispatch_request(&req, state, rt)
+}
+
+/// Dispatch an explicit `Request` (used by repeat-last replays). Re-interpolates
+/// against the current env so dyn-vars re-roll and env switches take effect.
+pub fn dispatch_request(
+    req: &Request,
+    state: &AppState,
+    rt: Handle,
+) -> mpsc::Receiver<Result<Executed, ExecError>> {
+    let (tx, rx) = mpsc::channel();
+    let req = req.clone();
     let env = state
         .active_env_ref()
         .cloned()

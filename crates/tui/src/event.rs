@@ -75,6 +75,7 @@ pub fn run(mut state: AppState, rt: Handle) -> anyhow::Result<()> {
                 Event::Key(k) => {
                     let action = dispatch(&state, k);
                     let send_now = matches!(action, Action::SendRequest);
+                    let repeat_now = matches!(action, Action::RepeatLast);
                     let dirty = apply(&mut state, action);
                     if dirty == EnvDirty::Yes {
                         if let Some(env) = state.active_env_ref() {
@@ -95,6 +96,24 @@ pub fn run(mut state: AppState, rt: Handle) -> anyhow::Result<()> {
                             state.toast =
                                 Some(format!("sending {} {}…", state.method, state.url_buf));
                             state.inflight = Some(sender::dispatch(&state, rt.clone()));
+                        }
+                    }
+                    if repeat_now {
+                        if state.inflight.is_some() {
+                            state.notify("send in progress".to_string());
+                        } else if let Some(template) = state
+                            .last_response
+                            .as_ref()
+                            .map(|e| e.request_template.clone())
+                        {
+                            state.notify(format!(
+                                "replaying {} {} — your edits are unchanged",
+                                template.method, template.url.0 .0
+                            ));
+                            state.inflight =
+                                Some(sender::dispatch_request(&template, &state, rt.clone()));
+                        } else {
+                            state.notify("nothing sent yet".to_string());
                         }
                     }
                 }
