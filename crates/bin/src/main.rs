@@ -42,8 +42,14 @@ async fn main() -> anyhow::Result<()> {
             let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
             let cfg = resolve_config_dir(cli.config_dir, &cwd);
             let rt = tokio::runtime::Handle::current();
+            let adapters = lazyfetch_tui::adapters::Adapters::new(
+                std::sync::Arc::new(lazyfetch_http::ReqwestSender::new()),
+                std::sync::Arc::new(lazyfetch_auth::resolver::DefaultResolver::new()),
+                std::sync::Arc::new(lazyfetch_auth::NoCache),
+            );
             tokio::task::spawn_blocking(move || {
-                lazyfetch_tui::event::run(lazyfetch_tui::app::AppState::new(cfg), rt)
+                let state = lazyfetch_tui::app::AppState::new(cfg).with_adapters(adapters);
+                lazyfetch_tui::event::run(state, rt)
             })
             .await?
         }

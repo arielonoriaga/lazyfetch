@@ -1,5 +1,6 @@
 //! lazyfetch-tui
 
+pub mod adapters;
 pub mod app;
 pub mod commands;
 pub mod event;
