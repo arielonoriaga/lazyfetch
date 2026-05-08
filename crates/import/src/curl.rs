@@ -53,116 +53,59 @@ pub fn parse(cmd: &str) -> Result<(Request, ImportReport), CurlError> {
 
 /// POSIX shell tokenizer. Handles:
 /// - Single quotes (literal — no escapes inside)
-/// - Double quotes (POSIX escapes: `\\`, `\"`, `\$`, `\``, `\n` — `\n` kept as backslash-n to match user intent in headers)
+/// - Double quotes (POSIX escapes: `\\`, `\"`, `\$`, `\``)
 /// - `$'...'` ANSI-C strings (`\n`, `\r`, `\t`, `\\`, `\'` decoded)
-/// - Backslash line continuations
-/// - Bare backslash escapes outside quotes
+/// - Backslash line continuations + bare backslash escapes outside quotes
 fn tokenize(input: &str) -> Result<Vec<String>, CurlError> {
+    let mut it = input.chars().peekable();
     let mut out: Vec<String> = Vec::new();
     let mut cur = String::new();
     let mut in_token = false;
-    let bytes: Vec<char> = input.chars().collect();
-    let mut i = 0;
-    while i < bytes.len() {
-        let c = bytes[i];
+
+    while let Some(&c) = it.peek() {
         match c {
             ' ' | '\t' | '\n' | '\r' => {
                 if in_token {
                     out.push(std::mem::take(&mut cur));
                     in_token = false;
                 }
-                i += 1;
+                it.next();
             }
-            '\\' if i + 1 < bytes.len() => {
-                let n = bytes[i + 1];
-                if n == '\n' {
-                    i += 2;
-                } else {
-                    cur.push(n);
-                    in_token = true;
-                    i += 2;
+            '\\' => {
+                it.next();
+                match it.next() {
+                    None => break,
+                    Some('\n') => {} // line continuation
+                    Some(n) => {
+                        cur.push(n);
+                        in_token = true;
+                    }
                 }
             }
             '\'' => {
+                it.next();
+                read_single_quoted(&mut it, &mut cur)?;
                 in_token = true;
-                i += 1;
-                while i < bytes.len() && bytes[i] != '\'' {
-                    cur.push(bytes[i]);
-                    i += 1;
-                }
-                if i >= bytes.len() {
-                    return Err(CurlError::Tokenize {
-                        msg: "unterminated single quote".into(),
-                    });
-                }
-                i += 1;
             }
             '"' => {
+                it.next();
+                read_double_quoted(&mut it, &mut cur)?;
                 in_token = true;
-                i += 1;
-                while i < bytes.len() && bytes[i] != '"' {
-                    if bytes[i] == '\\' && i + 1 < bytes.len() {
-                        let n = bytes[i + 1];
-                        match n {
-                            '\\' | '"' | '$' | '`' => {
-                                cur.push(n);
-                                i += 2;
-                            }
-                            '\n' => i += 2,
-                            _ => {
-                                cur.push('\\');
-                                cur.push(n);
-                                i += 2;
-                            }
-                        }
-                    } else {
-                        cur.push(bytes[i]);
-                        i += 1;
-                    }
-                }
-                if i >= bytes.len() {
-                    return Err(CurlError::Tokenize {
-                        msg: "unterminated double quote".into(),
-                    });
-                }
-                i += 1;
             }
-            '$' if i + 1 < bytes.len() && bytes[i + 1] == '\'' => {
+            '$' => {
+                it.next();
+                if matches!(it.peek(), Some('\'')) {
+                    it.next();
+                    read_ansi_c(&mut it, &mut cur)?;
+                } else {
+                    cur.push('$');
+                }
                 in_token = true;
-                i += 2;
-                while i < bytes.len() && bytes[i] != '\'' {
-                    if bytes[i] == '\\' && i + 1 < bytes.len() {
-                        let n = bytes[i + 1];
-                        match n {
-                            'n' => cur.push('\n'),
-                            'r' => cur.push('\r'),
-                            't' => cur.push('\t'),
-                            '\\' => cur.push('\\'),
-                            '\'' => cur.push('\''),
-                            '"' => cur.push('"'),
-                            '0' => cur.push('\0'),
-                            other => {
-                                cur.push('\\');
-                                cur.push(other);
-                            }
-                        }
-                        i += 2;
-                    } else {
-                        cur.push(bytes[i]);
-                        i += 1;
-                    }
-                }
-                if i >= bytes.len() {
-                    return Err(CurlError::Tokenize {
-                        msg: "unterminated $'...' string".into(),
-                    });
-                }
-                i += 1;
             }
             _ => {
                 cur.push(c);
                 in_token = true;
-                i += 1;
+                it.next();
             }
         }
     }
@@ -170,6 +113,74 @@ fn tokenize(input: &str) -> Result<Vec<String>, CurlError> {
         out.push(cur);
     }
     Ok(out)
+}
+
+fn read_single_quoted<I: Iterator<Item = char>>(
+    it: &mut std::iter::Peekable<I>,
+    cur: &mut String,
+) -> Result<(), CurlError> {
+    for c in it.by_ref() {
+        if c == '\'' {
+            return Ok(());
+        }
+        cur.push(c);
+    }
+    Err(CurlError::Tokenize {
+        msg: "unterminated single quote".into(),
+    })
+}
+
+fn read_double_quoted<I: Iterator<Item = char>>(
+    it: &mut std::iter::Peekable<I>,
+    cur: &mut String,
+) -> Result<(), CurlError> {
+    while let Some(c) = it.next() {
+        match c {
+            '"' => return Ok(()),
+            '\\' => match it.next() {
+                None => break,
+                Some('\n') => {} // line continuation
+                Some(n @ ('\\' | '"' | '$' | '`')) => cur.push(n),
+                Some(n) => {
+                    cur.push('\\');
+                    cur.push(n);
+                }
+            },
+            _ => cur.push(c),
+        }
+    }
+    Err(CurlError::Tokenize {
+        msg: "unterminated double quote".into(),
+    })
+}
+
+fn read_ansi_c<I: Iterator<Item = char>>(
+    it: &mut std::iter::Peekable<I>,
+    cur: &mut String,
+) -> Result<(), CurlError> {
+    while let Some(c) = it.next() {
+        match c {
+            '\'' => return Ok(()),
+            '\\' => match it.next() {
+                None => break,
+                Some('n') => cur.push('\n'),
+                Some('r') => cur.push('\r'),
+                Some('t') => cur.push('\t'),
+                Some('\\') => cur.push('\\'),
+                Some('\'') => cur.push('\''),
+                Some('"') => cur.push('"'),
+                Some('0') => cur.push('\0'),
+                Some(other) => {
+                    cur.push('\\');
+                    cur.push(other);
+                }
+            },
+            _ => cur.push(c),
+        }
+    }
+    Err(CurlError::Tokenize {
+        msg: "unterminated $'...' string".into(),
+    })
 }
 
 fn assemble(mut tokens: Vec<String>) -> Result<(Request, ImportReport), CurlError> {
@@ -188,22 +199,19 @@ fn assemble(mut tokens: Vec<String>) -> Result<(Request, ImportReport), CurlErro
     let mut max_redirects: u8 = 10;
     let mut follow_redirects = true;
 
-    let mut i = 0;
-    while i < tokens.len() {
-        let t = tokens[i].clone();
-        let take_val = |i: &mut usize| -> Result<String, CurlError> {
-            *i += 1;
-            tokens
-                .get(*i)
-                .cloned()
-                .ok_or_else(|| CurlError::Flag {
-                    which: t.clone(),
-                    msg: "missing value".into(),
-                })
+    let mut it = tokens.into_iter().peekable();
+    while let Some(t) = it.next() {
+        let need_val = |it: &mut std::iter::Peekable<std::vec::IntoIter<String>>,
+                        flag: &str|
+         -> Result<String, CurlError> {
+            it.next().ok_or_else(|| CurlError::Flag {
+                which: flag.into(),
+                msg: "missing value".into(),
+            })
         };
         match t.as_str() {
             "-X" | "--request" => {
-                let v = take_val(&mut i)?;
+                let v = need_val(&mut it, &t)?;
                 method = Some(
                     http::Method::from_bytes(v.as_bytes()).map_err(|e| CurlError::Flag {
                         which: t.clone(),
@@ -212,7 +220,7 @@ fn assemble(mut tokens: Vec<String>) -> Result<(Request, ImportReport), CurlErro
                 );
             }
             "-H" | "--header" => {
-                let v = take_val(&mut i)?;
+                let v = need_val(&mut it, &t)?;
                 if let Some((k, val)) = v.split_once(':') {
                     headers.push(KV {
                         key: k.trim().into(),
@@ -223,10 +231,10 @@ fn assemble(mut tokens: Vec<String>) -> Result<(Request, ImportReport), CurlErro
                 }
             }
             "-d" | "--data" | "--data-raw" | "--data-binary" => {
-                data_parts.push(take_val(&mut i)?);
+                data_parts.push(need_val(&mut it, &t)?);
             }
             "--data-urlencode" => {
-                let v = take_val(&mut i)?;
+                let v = need_val(&mut it, &t)?;
                 let (k, val) = v.split_once('=').unwrap_or(("", v.as_str()));
                 urlencode_parts.push(KV {
                     key: k.into(),
@@ -236,7 +244,7 @@ fn assemble(mut tokens: Vec<String>) -> Result<(Request, ImportReport), CurlErro
                 });
             }
             "-F" | "--form" => {
-                let v = take_val(&mut i)?;
+                let v = need_val(&mut it, &t)?;
                 let (k, val) = v.split_once('=').ok_or_else(|| CurlError::Flag {
                     which: t.clone(),
                     msg: "expected key=value".into(),
@@ -247,7 +255,7 @@ fn assemble(mut tokens: Vec<String>) -> Result<(Request, ImportReport), CurlErro
                 force_get = true;
             }
             "-u" | "--user" => {
-                let v = take_val(&mut i)?;
+                let v = need_val(&mut it, &t)?;
                 let (user, pass) = match v.split_once(':') {
                     Some((u, p)) => (u.to_string(), p.to_string()),
                     None => {
@@ -263,12 +271,12 @@ fn assemble(mut tokens: Vec<String>) -> Result<(Request, ImportReport), CurlErro
                 });
             }
             "--url" => {
-                url = Some(take_val(&mut i)?);
+                url = Some(need_val(&mut it, &t)?);
             }
             "--cookie" | "-b" => {
                 headers.push(KV {
                     key: "Cookie".into(),
-                    value: take_val(&mut i)?,
+                    value: need_val(&mut it, &t)?,
                     enabled: true,
                     secret: false,
                 });
@@ -276,7 +284,7 @@ fn assemble(mut tokens: Vec<String>) -> Result<(Request, ImportReport), CurlErro
             "-A" | "--user-agent" => {
                 headers.push(KV {
                     key: "User-Agent".into(),
-                    value: take_val(&mut i)?,
+                    value: need_val(&mut it, &t)?,
                     enabled: true,
                     secret: false,
                 });
@@ -284,7 +292,7 @@ fn assemble(mut tokens: Vec<String>) -> Result<(Request, ImportReport), CurlErro
             "-e" | "--referer" => {
                 headers.push(KV {
                     key: "Referer".into(),
-                    value: take_val(&mut i)?,
+                    value: need_val(&mut it, &t)?,
                     enabled: true,
                     secret: false,
                 });
@@ -298,7 +306,7 @@ fn assemble(mut tokens: Vec<String>) -> Result<(Request, ImportReport), CurlErro
                 });
             }
             "--max-redirs" => {
-                let v = take_val(&mut i)?;
+                let v = need_val(&mut it, &t)?;
                 max_redirects = v.parse().map_err(|e| CurlError::Flag {
                     which: t.clone(),
                     msg: format!("{e}"),
@@ -313,7 +321,7 @@ fn assemble(mut tokens: Vec<String>) -> Result<(Request, ImportReport), CurlErro
                     .push("--insecure ignored: rustls verification is intentional".into());
             }
             "--proxy" => {
-                let _ = take_val(&mut i)?;
+                let _ = need_val(&mut it, &t)?;
                 report.warnings.push("--proxy ignored in v0.2".into());
             }
             other if other.starts_with('-') => {
@@ -327,7 +335,6 @@ fn assemble(mut tokens: Vec<String>) -> Result<(Request, ImportReport), CurlErro
                 }
             }
         }
-        i += 1;
     }
 
     let mut url = url.ok_or(CurlError::MissingUrl)?;
