@@ -119,19 +119,20 @@ pub async fn execute(
     http: &dyn HttpSender,
     clock: &dyn Clock,
 ) -> Result<Executed, ExecError> {
-    let url_i = crate::env::interpolate(&req.url.0 .0, ctx)?;
+    let dyn_ctx = crate::dynvars::DynCtx { clock };
+    let url_i = crate::env::interpolate_with_dyn(&req.url.0 .0, ctx, &dyn_ctx)?;
     let mut headers: Vec<(String, String)> = Vec::new();
     let mut reg = SecretRegistry::new();
     reg.extend(&url_i.used_secrets);
     for kv in req.headers.iter().filter(|k| k.enabled) {
-        let v = crate::env::interpolate(&kv.value, ctx)?;
+        let v = crate::env::interpolate_with_dyn(&kv.value, ctx, &dyn_ctx)?;
         reg.extend(&v.used_secrets);
         headers.push((kv.key.clone(), v.value));
     }
-    let body_bytes = render_body(&req.body, ctx, &mut reg)?;
-    let url = apply_query(&url_i.value, &req.query, ctx, &mut reg)?;
+    let body_bytes = render_body(&req.body, ctx, &dyn_ctx, &mut reg)?;
+    let url = apply_query(&url_i.value, &req.query, ctx, &dyn_ctx, &mut reg)?;
     let multipart = if let Body::Multipart(parts) = &req.body {
-        Some(render_multipart(parts, ctx, &mut reg)?)
+        Some(render_multipart(parts, ctx, &dyn_ctx, &mut reg)?)
     } else {
         None
     };
@@ -162,11 +163,16 @@ pub async fn execute(
     })
 }
 
-fn render_body(b: &Body, ctx: &ResolveCtx, reg: &mut SecretRegistry) -> Result<Vec<u8>, CoreError> {
+fn render_body(
+    b: &Body,
+    ctx: &ResolveCtx,
+    dyn_ctx: &crate::dynvars::DynCtx,
+    reg: &mut SecretRegistry,
+) -> Result<Vec<u8>, CoreError> {
     Ok(match b {
         Body::None => Vec::new(),
         Body::Raw { text, .. } | Body::Json(text) => {
-            let i = crate::env::interpolate(text, ctx)?;
+            let i = crate::env::interpolate_with_dyn(text, ctx, dyn_ctx)?;
             reg.extend(&i.used_secrets);
             i.value.into_bytes()
         }
@@ -176,7 +182,7 @@ fn render_body(b: &Body, ctx: &ResolveCtx, reg: &mut SecretRegistry) -> Result<V
                 if i > 0 {
                     s.push('&');
                 }
-                let v = crate::env::interpolate(&kv.value, ctx)?;
+                let v = crate::env::interpolate_with_dyn(&kv.value, ctx, dyn_ctx)?;
                 reg.extend(&v.used_secrets);
                 s.push_str(&urlencoding::encode(&kv.key));
                 s.push('=');
@@ -186,12 +192,12 @@ fn render_body(b: &Body, ctx: &ResolveCtx, reg: &mut SecretRegistry) -> Result<V
         }
         Body::Multipart(_) | Body::File(_) => Vec::new(),
         Body::GraphQL { query, variables } => {
-            let q = crate::env::interpolate(query, ctx)?;
+            let q = crate::env::interpolate_with_dyn(query, ctx, dyn_ctx)?;
             reg.extend(&q.used_secrets);
             let vars_value: serde_json::Value = if variables.trim().is_empty() {
                 serde_json::Value::Object(Default::default())
             } else {
-                let v = crate::env::interpolate(variables, ctx)?;
+                let v = crate::env::interpolate_with_dyn(variables, ctx, dyn_ctx)?;
                 reg.extend(&v.used_secrets);
                 serde_json::from_str(&v.value).map_err(|e| {
                     CoreError::InvalidTemplate(format!("graphql variables: {e}"))
@@ -206,13 +212,14 @@ fn render_body(b: &Body, ctx: &ResolveCtx, reg: &mut SecretRegistry) -> Result<V
 fn render_multipart(
     parts: &[crate::catalog::Part],
     ctx: &ResolveCtx,
+    dyn_ctx: &crate::dynvars::DynCtx,
     reg: &mut SecretRegistry,
 ) -> Result<Vec<MultipartField>, CoreError> {
     let mut out = Vec::with_capacity(parts.len());
     for p in parts {
         let kind = match &p.content {
             PartContent::Text(t) => {
-                let i = crate::env::interpolate(t, ctx)?;
+                let i = crate::env::interpolate_with_dyn(t, ctx, dyn_ctx)?;
                 reg.extend(&i.used_secrets);
                 MultipartKind::Text(i.value)
             }
@@ -231,6 +238,7 @@ fn apply_query(
     url: &str,
     q: &[crate::primitives::KV],
     ctx: &ResolveCtx,
+    dyn_ctx: &crate::dynvars::DynCtx,
     reg: &mut SecretRegistry,
 ) -> Result<String, CoreError> {
     let mut out = url.to_string();
@@ -238,7 +246,7 @@ fn apply_query(
     for kv in q.iter().filter(|k| k.enabled) {
         out.push(if first { '?' } else { '&' });
         first = false;
-        let v = crate::env::interpolate(&kv.value, ctx)?;
+        let v = crate::env::interpolate_with_dyn(&kv.value, ctx, dyn_ctx)?;
         reg.extend(&v.used_secrets);
         out.push_str(&urlencoding::encode(&kv.key));
         out.push('=');
