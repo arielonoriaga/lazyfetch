@@ -93,6 +93,8 @@ pub enum Action {
     SaveAsBackspace,
     SaveAsSubmit,
     SaveAsCancel,
+    CurlExport,
+    RepeatLast,
     NoOp,
 }
 
@@ -283,6 +285,8 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
         (KeyCode::Char('y'), KeyModifiers::NONE) if state.focus == Focus::Response => {
             Action::YankSelection
         }
+        (KeyCode::Char('Y'), _) if state.focus == Focus::Response => Action::CurlExport,
+        (KeyCode::Char('R'), _) => Action::RepeatLast,
         (KeyCode::Esc, _) if state.focus == Focus::Response && state.visual_anchor.is_some() => {
             Action::EscapeVisual
         }
@@ -1003,6 +1007,21 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
             run_save(state, path.trim());
             EnvDirty::No
         }
+        Action::CurlExport => {
+            if let Some(executed) = &state.last_response {
+                let curl =
+                    lazyfetch_core::exec::build_curl(&executed.request_snapshot, &executed.secrets);
+                let len = curl.len();
+                match crate::motion::copy_to_clipboard(&curl) {
+                    Ok(()) => state.notify(format!("cURL → clipboard ({len} chars)")),
+                    Err(e) => state.notify(format!("clipboard failed: {e}")),
+                }
+            } else {
+                state.notify("nothing sent yet".to_string());
+            }
+            EnvDirty::No
+        }
+        Action::RepeatLast => EnvDirty::No,
         Action::NoOp => EnvDirty::No,
     }
 }
