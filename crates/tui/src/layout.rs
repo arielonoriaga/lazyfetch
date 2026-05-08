@@ -74,6 +74,7 @@ pub fn draw(f: &mut Frame, state: &AppState) -> DrawInfo {
         Mode::SaveAs => (" SAVE ", Color::Black, Color::Yellow),
         Mode::Rename => ("RENAME ", Color::Black, Color::Magenta),
         Mode::Move => (" MOVE  ", Color::Black, Color::Magenta),
+        Mode::ImportCurl => (" IMPORT ", Color::Black, Color::Magenta),
     };
     let mode_span = Span::styled(
         mode_label.to_string(),
@@ -90,6 +91,7 @@ pub fn draw(f: &mut Frame, state: &AppState) -> DrawInfo {
         Mode::SaveAs => format!("Save as: {}", state.save_buf),
         Mode::Rename => format!("Rename to: {}", state.rename_buf),
         Mode::Move => format!("Move {} → {}", state.marked_requests.len(), state.move_buf),
+        Mode::ImportCurl => format!("Import cURL ({} chars) — Esc cancel", state.import_curl_buf.len()),
         Mode::Normal => match state.focus {
             Focus::Env => {
                 "Env: j/k · a add · A add-sec · e edit · d del · m sec · r reveal · :env / :newenv"
@@ -941,17 +943,7 @@ fn pane(f: &mut Frame, area: Rect, title: &str, my: Focus, state: &AppState) {
             render_collections(f, inner, state, state.focus == Focus::Collections)
         }
         Focus::Env => render_env(f, inner, state, state.focus == Focus::Env),
-        Focus::Request => empty(
-            f,
-            inner,
-            "No request open",
-            &[
-                "Pick one from Collections (Tab),",
-                "or run from your shell:",
-                "",
-                "  lazyfetch run <coll>/<request>",
-            ],
-        ),
+        Focus::Request => crate::request_pane::render(f, inner, state),
         Focus::Response => {} // handled by pane_response
         Focus::Url => {}      // rendered by render_url_bar above this pane()
     }

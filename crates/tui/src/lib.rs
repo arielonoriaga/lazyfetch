@@ -7,6 +7,7 @@ pub mod help;
 pub mod keymap;
 pub mod editor;
 pub mod kv_editor;
+pub mod request_pane;
 pub mod layout;
 pub mod motion;
 pub mod response;

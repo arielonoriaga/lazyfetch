@@ -6,12 +6,12 @@ expression: s
 │No collections yet    ││ GET     (press Tab here, then type your URL — e.g. {{│
 │                      │└──────────────────────────────────────────────────────┘
 │Get started:          │┌  3  Request ─────────────────────────────────────────┐
-│  Ctrl-w then type    ││No request open                                       │
+│  Ctrl-w then type    ││ 1 Body    2 Headers    3 Query                       │
 │api/health            ││                                                      │
-│  lazyfetch           ││Pick one from Collections (Tab),                      │
-│import-postman <file> ││or run from your shell:                               │
+│  lazyfetch           ││[None ▾]                                              │
+│import-postman <file> ││(no body)  press i / a to edit  ·  Tab cycles body kin│
 │  lazyfetch           ││                                                      │
-│import-postman <file> ││  lazyfetch run <coll>/<request>                      │
+│import-postman <file> ││                                                      │
 │--local               ││                                                      │
 │                      ││                                                      │
 └──────────────────────┘└──────────────────────────────────────────────────────┘

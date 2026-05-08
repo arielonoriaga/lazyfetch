@@ -122,6 +122,7 @@ pub fn dispatch(state: &AppState, ev: KeyEvent) -> Action {
         Mode::SaveAs => dispatch_save_as(ev),
         Mode::Rename => dispatch_rename(ev),
         Mode::Move => dispatch_move(ev),
+        Mode::ImportCurl => Action::NoOp,
     }
 }
 

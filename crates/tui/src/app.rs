@@ -1,4 +1,6 @@
-use lazyfetch_core::catalog::Collection;
+use crate::editor::BodyEditorState;
+use crate::kv_editor::KvEditor;
+use lazyfetch_core::catalog::{BodyKind, Collection};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CollRow {
@@ -34,6 +36,24 @@ pub enum Mode {
     SaveAs,
     Rename,
     Move,
+    ImportCurl,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReqTab {
+    Body,
+    Headers,
+    Query,
+}
+
+impl ReqTab {
+    pub fn cycle(self) -> Self {
+        match self {
+            Self::Body => Self::Headers,
+            Self::Headers => Self::Query,
+            Self::Query => Self::Body,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -193,6 +213,14 @@ pub struct AppState {
     pub search_match_lines: Vec<usize>,
     pub search_match_idx: usize,
     pub should_quit: bool,
+    pub req_tab: ReqTab,
+    pub req_body_kind: BodyKind,
+    pub body_mime: String,
+    pub body_editor: BodyEditorState,
+    pub headers_kv: KvEditor,
+    pub query_kv: KvEditor,
+    pub form_kv: KvEditor,
+    pub import_curl_buf: String,
 }
 
 impl AppState {
@@ -247,6 +275,14 @@ impl AppState {
             search_match_lines: vec![],
             search_match_idx: 0,
             should_quit: false,
+            req_tab: ReqTab::Body,
+            req_body_kind: BodyKind::None,
+            body_mime: "text/plain".into(),
+            body_editor: BodyEditorState::None,
+            headers_kv: KvEditor::new(),
+            query_kv: KvEditor::new(),
+            form_kv: KvEditor::new(),
+            import_curl_buf: String::new(),
         }
     }
 
