@@ -134,6 +134,8 @@ Five panes in a 2x3 grid (URL bar spans the right top row):
 | `F5` | **send request** (any pane / any mode) |
 | `Ctrl-s` | send |
 | `Ctrl-w` | save URL+method as request → popup |
+| `R` | repeat last sent request (snapshot replay; ignores edits) |
+| `Y` | (Response pane) copy redacted cURL to clipboard |
 | `:messages` | scrollable history of all toasts (last 64) |
 
 ### URL bar (pane 2)
@@ -181,6 +183,25 @@ JSON bodies are color-coded (keys cyan, strings green, numbers magenta, bool yel
 | `r` | reveal / hide secret value (transient, in-memory only) |
 | `:env <name>` | switch active environment |
 | `:newenv <name>` | create new environment |
+
+### Request pane (pane 3)
+
+Three tabs: `1` Body · `2` Headers · `3` Query · `Space` cycles.
+
+| Key | Action |
+|---|---|
+| `Tab` (Body tab) | cycle body kind (`None → Raw → Json → Form → Multipart → GraphQL → File → None`) |
+| `j` / `k` / `↓` / `↑` | row cursor (Headers / Query / Form / Multipart) |
+| `a` | add new row |
+| `i` | edit value of cursor row |
+| `x` | toggle row enabled |
+| `d` | delete row |
+| `m` | toggle row secret |
+| `f` | toggle Text↔File (Multipart only) |
+| **insert mode** typing | edit cell |
+| `Tab` (insert) | swap key↔value |
+| `Enter` (insert) | commit row (rejects empty key) |
+| `Esc` (insert) | cancel; freshly-added row drops |
 
 ### Collections pane (pane 1)
 
@@ -257,7 +278,54 @@ bin → tui → core ← { http, storage, auth, import }
 | `auth` | `Bearer` / `Basic` / `ApiKey` resolvers with secret-only validation. OAuth2 stubbed for v0.3. |
 | `import` | Postman v2.1 → core types, `ImportReport` warnings, DoS-bound parser |
 | `tui` | `ratatui` + `crossterm`, alt-screen + raw-mode `Drop` guard, 5 panes + 5 modal popups, mouse + vim navigation, search, JSON colorizer |
-| `bin` | composition root + CLI (`run`, `import-postman`) |
+| `bin` | composition root + CLI (`run`, `import-postman`, `import-curl`) |
+
+---
+
+## v0.2 — Request editor (shipped on `feat/v2-impl`)
+
+### Request pane (Focus → `3`)
+
+Three tabs. `1` Body · `2` Headers · `3` Query · `Space` cycles. Tab on Body cycles body kind: `None → Raw → Json → Form → Multipart → GraphQL → File`.
+
+KV editor (Headers · Query · Form · Multipart): `j`/`k` move · `a` add row · `i` edit value · `x` enable/disable · `d` delete · `m` toggle secret · `f` Text↔File (Multipart). Insert mode: type to edit, `Tab` swap key/value, `Enter` commit, `Esc` cancel.
+
+Body editor: `tui-textarea` inline for Raw/JSON. GraphQL splits 60/40 query+variables. `$EDITOR` shell-out via `crate::editor::shell_out` (terminal suspend/resume guarded against panic).
+
+### Dynamic vars
+
+Resolve at send time inside any `{{...}}`:
+
+| Name | Args | Output |
+|---|---|---|
+| `$now` | `(rfc3339 \| iso8601 \| http \| unix \| <strftime>)` | timestamp string |
+| `$timestamp` | — | unix seconds |
+| `$uuid` | — | UUID v4 |
+| `$ulid` | — | ULID |
+| `$randomInt` | `(min, max)` inclusive | integer |
+| `$randomString` | `(len)` (≤256) | alphanumeric |
+| `$base64` | `(arg)` | b64 of arg (nesting + secret-tainting) |
+
+Auth fields refuse dyn-var-only templates (`AuthError::DynVarOnlyInSecretField`) — token re-rolling per request breaks auth.
+
+### cURL import
+
+```bash
+lazyfetch import-curl 'curl https://api.test/x'      # literal command
+lazyfetch import-curl path/to/cmd.sh                 # file
+echo 'curl ...' | lazyfetch import-curl              # stdin
+lazyfetch import-curl '<cmd>' --save my-coll/login   # persist as Request
+```
+
+Parser handles bash/zsh/POSIX quoting (single, double, `$'...'` ANSI-C, `\` continuations), the full flag table (`-X`/`-H`/`-d`/`--data-raw`/`--data-binary`/`--data-urlencode`/`-F`/`-G`/`-u`/`--cookie`/`-A`/`-e`/`--compressed`/`--max-redirs`/`-L`), warnings for `-k`/`--proxy`/unknown flags. Body kind picked from the *last* `Content-Type` header. cmd.exe / PowerShell input rejected up front.
+
+### cURL export
+
+`Y` (capital) on Response pane — copies a redacted cURL command via `core::exec::build_curl` to the clipboard. Single-quote escaping is POSIX-portable (`O'Brien` → `'O'\''Brien'`). Secrets replaced via the request's `SecretRegistry` before the string ever touches the clipboard helper.
+
+### Repeat-last
+
+`R` (capital) on any pane / mode replays `state.last_response.request_template` — the pre-interpolation snapshot — through `sender::dispatch_request`. Re-interpolates against the *current* env so dyn-vars re-roll. URL bar / method / body / headers in the editor are not consulted; toast: `replaying GET /users/42 — your edits are unchanged`.
 
 ---
 
@@ -266,19 +334,19 @@ bin → tui → core ← { http, storage, auth, import }
 | Version | Status |
 |---|---|
 | **v0.1 alpha** | ✅ Backend + CLI + TUI w/ env+collection management, vim navigation, search, mouse, JSON colorize, save / rename / move popups, autocomplete, `:messages` |
-| v0.2 | Body editor (`tui-textarea` + `$EDITOR`), header/query row editing, `jaq` filter expressions, OpenAPI 3 import |
-| v0.3 | OAuth2 (Client Credentials + Authorization Code w/ PKCE + loopback callback) + OS keyring |
+| **v0.2 alpha** | ✅ Request editor (Body kinds incl. GraphQL · Hybrid KV editor · `$EDITOR` shell-out · dyn-vars · cURL import + export · repeat-last) |
+| v0.3 | OAuth2 (Client Credentials + Authorization Code w/ PKCE + loopback callback) + OS keyring · `jaq` filter expressions · OpenAPI 3 import |
 | v0.4 | History viewer pane, theme + keymap config, nested folder navigation in Collections |
 | v0.5 | Cookie jar, detailed timings (DNS / connect / TLS / TTFB), session export to cURL |
 
-Spec: [`docs/superpowers/specs/2026-05-07-lazyfetch-design.md`](docs/superpowers/specs/2026-05-07-lazyfetch-design.md) · Plan: [`docs/superpowers/plans/2026-05-07-lazyfetch-v1.md`](docs/superpowers/plans/2026-05-07-lazyfetch-v1.md)
+Specs: [v0.1](docs/superpowers/specs/2026-05-07-lazyfetch-design.md) · [v0.2](docs/superpowers/specs/2026-05-08-lazyfetch-v2-request-editor.md). Plans: [v0.1](docs/superpowers/plans/2026-05-07-lazyfetch-v1.md) · [v0.2](docs/superpowers/plans/2026-05-08-lazyfetch-v2.md)
 
 ---
 
 ## Develop
 
 ```bash
-cargo test --workspace                                          # 54 tests
+cargo test --workspace                                          # 99 tests
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 bash scripts/check-core-purity.sh                               # enforce IO-free core

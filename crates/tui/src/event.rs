@@ -76,6 +76,7 @@ pub fn run(mut state: AppState, rt: Handle) -> anyhow::Result<()> {
                     let action = dispatch(&state, k);
                     let send_now = matches!(action, Action::SendRequest);
                     let repeat_now = matches!(action, Action::RepeatLast);
+                    let shell_out_body = matches!(action, Action::BodyShellOut);
                     let dirty = apply(&mut state, action);
                     if dirty == EnvDirty::Yes {
                         if let Some(env) = state.active_env_ref() {
@@ -96,6 +97,24 @@ pub fn run(mut state: AppState, rt: Handle) -> anyhow::Result<()> {
                             state.toast =
                                 Some(format!("sending {} {}…", state.method, state.url_buf));
                             state.inflight = Some(sender::dispatch(&state, rt.clone()));
+                        }
+                    }
+                    if shell_out_body {
+                        let initial = state.body_editor.text();
+                        let ext = match state.req_body_kind {
+                            lazyfetch_core::catalog::BodyKind::Json => ".json",
+                            lazyfetch_core::catalog::BodyKind::GraphQL => ".graphql",
+                            _ => ".txt",
+                        };
+                        match crate::editor::shell_out(&mut guard, &initial, ext) {
+                            Ok(text) => {
+                                state.body_editor = crate::editor::BodyEditorState::for_kind(
+                                    state.req_body_kind,
+                                    &text,
+                                );
+                                state.notify(format!("body updated ({} chars)", text.len()));
+                            }
+                            Err(e) => state.notify(format!("editor failed: {e}")),
                         }
                     }
                     if repeat_now {

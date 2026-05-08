@@ -215,12 +215,15 @@ pub struct AppState {
     pub should_quit: bool,
     pub req_tab: ReqTab,
     pub req_body_kind: BodyKind,
-    pub body_mime: String,
     pub body_editor: BodyEditorState,
+    /// Last non-empty body text. Survives switches to KV-backed kinds (Form/Multipart)
+    /// so the user can cycle Json→Form→Json without losing what they typed.
+    pub body_scratch: String,
     pub headers_kv: KvEditor,
     pub query_kv: KvEditor,
     pub form_kv: KvEditor,
     pub import_curl_buf: String,
+    pub body_editing: bool,
 }
 
 impl AppState {
@@ -277,12 +280,13 @@ impl AppState {
             should_quit: false,
             req_tab: ReqTab::Body,
             req_body_kind: BodyKind::None,
-            body_mime: "text/plain".into(),
             body_editor: BodyEditorState::None,
+            body_scratch: String::new(),
             headers_kv: KvEditor::new(),
             query_kv: KvEditor::new(),
             form_kv: KvEditor::new(),
             import_curl_buf: String::new(),
+            body_editing: false,
         }
     }
 

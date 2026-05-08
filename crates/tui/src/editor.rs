@@ -14,10 +14,10 @@ pub enum GraphQlFocus {
 
 pub enum BodyEditorState {
     None,
-    Single(TextArea<'static>),
+    Single(Box<TextArea<'static>>),
     Split {
-        query: TextArea<'static>,
-        variables: TextArea<'static>,
+        query: Box<TextArea<'static>>,
+        variables: Box<TextArea<'static>>,
         focus: GraphQlFocus,
     },
 }
@@ -32,12 +32,12 @@ impl BodyEditorState {
                     ta.insert_str(line);
                     ta.insert_newline();
                 }
-                Self::Single(ta)
+                Self::Single(Box::new(ta))
             }
             BodyKind::Form | BodyKind::Multipart => Self::None,
             BodyKind::GraphQL => Self::Split {
-                query: TextArea::default(),
-                variables: TextArea::default(),
+                query: Box::new(TextArea::default()),
+                variables: Box::new(TextArea::default()),
                 focus: GraphQlFocus::Query,
             },
         }

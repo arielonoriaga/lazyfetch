@@ -40,7 +40,6 @@ pub struct KvEditor {
     pub cursor: usize,
     pub mode: KvMode,
     pub buf: String,
-    pub cursor_col: usize,
     fresh_row: bool,
 }
 
@@ -57,7 +56,6 @@ impl KvEditor {
             cursor: 0,
             mode: KvMode::Normal,
             buf: String::new(),
-            cursor_col: 0,
             fresh_row: false,
         }
     }
@@ -83,14 +81,12 @@ impl KvEditor {
         self.cursor = row;
         self.mode = KvMode::InsertKey { row };
         self.buf.clear();
-        self.cursor_col = 0;
         self.fresh_row = true;
     }
 
     pub fn start_edit_value(&mut self) {
         if self.cursor < self.rows.len() {
             self.buf = self.rows[self.cursor].value.clone();
-            self.cursor_col = self.buf.len();
             self.mode = KvMode::InsertValue { row: self.cursor };
         }
     }
@@ -98,20 +94,17 @@ impl KvEditor {
     pub fn start_edit_key(&mut self) {
         if self.cursor < self.rows.len() {
             self.buf = self.rows[self.cursor].key.clone();
-            self.cursor_col = self.buf.len();
             self.mode = KvMode::InsertKey { row: self.cursor };
         }
     }
 
     pub fn insert_char(&mut self, c: char) {
         self.buf.push(c);
-        self.cursor_col += 1;
         self.write_buf_into_row();
     }
 
     pub fn backspace(&mut self) {
         if self.buf.pop().is_some() {
-            self.cursor_col = self.cursor_col.saturating_sub(1);
             self.write_buf_into_row();
         }
     }
@@ -120,7 +113,6 @@ impl KvEditor {
         let row = match self.mode {
             KvMode::InsertKey { row } => {
                 self.buf = self.rows[row].value.clone();
-                self.cursor_col = self.buf.len();
                 self.mode = KvMode::InsertValue { row };
                 return;
             }
@@ -128,7 +120,6 @@ impl KvEditor {
             KvMode::Normal => return,
         };
         self.buf = self.rows[row].key.clone();
-        self.cursor_col = self.buf.len();
         self.mode = KvMode::InsertKey { row };
     }
 
@@ -144,7 +135,6 @@ impl KvEditor {
         }
         self.mode = KvMode::Normal;
         self.buf.clear();
-        self.cursor_col = 0;
         self.fresh_row = false;
     }
 
@@ -159,7 +149,6 @@ impl KvEditor {
         }
         self.mode = KvMode::Normal;
         self.buf.clear();
-        self.cursor_col = 0;
         self.fresh_row = false;
     }
 

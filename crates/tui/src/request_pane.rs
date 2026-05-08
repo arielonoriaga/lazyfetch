@@ -78,7 +78,7 @@ fn render_body_tab(f: &mut Frame, area: Rect, state: &AppState) {
             f.render_widget(p, split[1]);
         }
         BodyEditorState::Single(ta) => {
-            f.render_widget(ta, split[1]);
+            f.render_widget(ta.as_ref(), split[1]);
         }
         BodyEditorState::Split {
             query, variables, ..
@@ -87,8 +87,8 @@ fn render_body_tab(f: &mut Frame, area: Rect, state: &AppState) {
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
                 .split(split[1]);
-            f.render_widget(query, halves[0]);
-            f.render_widget(variables, halves[1]);
+            f.render_widget(query.as_ref(), halves[0]);
+            f.render_widget(variables.as_ref(), halves[1]);
         }
     }
 }

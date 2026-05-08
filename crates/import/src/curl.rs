@@ -22,6 +22,25 @@ pub struct ImportReport {
     pub warnings: Vec<String>,
 }
 
+/// Derive a display name from a URL: prefer the trailing path segment, else host, else `imported`.
+fn derive_name(url: &str) -> String {
+    let after_scheme = url.split("://").nth(1).unwrap_or(url);
+    let path_only = after_scheme.split('?').next().unwrap_or(after_scheme);
+    let last = path_only
+        .rsplit('/')
+        .find(|seg| !seg.is_empty())
+        .unwrap_or("");
+    if !last.is_empty() && !last.contains('.') {
+        return last.to_string();
+    }
+    let host = after_scheme.split('/').next().unwrap_or("");
+    if !host.is_empty() {
+        host.to_string()
+    } else {
+        "imported".to_string()
+    }
+}
+
 pub fn parse(cmd: &str) -> Result<(Request, ImportReport), CurlError> {
     if cmd.contains("^\"") {
         return Err(CurlError::Tokenize {
@@ -390,24 +409,20 @@ fn assemble(mut tokens: Vec<String>) -> Result<(Request, ImportReport), CurlErro
         }
     }
 
-    let resolved_method = method.unwrap_or_else(|| {
-        if force_get {
-            http::Method::GET
-        } else if matches!(&body, Body::None) {
-            http::Method::GET
-        } else {
-            http::Method::POST
-        }
-    });
+    let default_method = if matches!(&body, Body::None) {
+        http::Method::GET
+    } else {
+        http::Method::POST
+    };
     let final_method = if force_get {
         http::Method::GET
     } else {
-        resolved_method
+        method.unwrap_or(default_method)
     };
 
     let req = Request {
         id: Ulid::new(),
-        name: "imported".into(),
+        name: derive_name(&url),
         method: final_method,
         url: UrlTemplate(Template(url)),
         query: vec![],
