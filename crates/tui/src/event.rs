@@ -107,12 +107,18 @@ pub fn run(mut state: AppState, rt: Handle) -> anyhow::Result<()> {
                             _ => ".txt",
                         };
                         match crate::editor::shell_out(&mut guard, &initial, ext) {
-                            Ok(text) => {
+                            Ok(result) => {
+                                if let Some(err) = result.resume_err {
+                                    state.notify(format!("warning: {err}"));
+                                }
                                 state.body_editor = crate::editor::BodyEditorState::for_kind(
                                     state.req_body_kind,
-                                    &text,
+                                    &result.text,
                                 );
-                                state.notify(format!("body updated ({} chars)", text.len()));
+                                state.notify(format!(
+                                    "body updated ({} chars)",
+                                    result.text.len()
+                                ));
                             }
                             Err(e) => state.notify(format!("editor failed: {e}")),
                         }

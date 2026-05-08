@@ -1,9 +1,26 @@
 use crate::auth::{AuthCache, AuthError, AuthResolver, AuthSpec};
 use crate::catalog::{Body, PartContent, Request};
-use crate::env::ResolveCtx;
+use crate::dynvars::DynCtx;
+use crate::env::{interpolate_with_dyn, ResolveCtx};
 use crate::error::CoreError;
 use crate::ports::Clock;
 use crate::secret::SecretRegistry;
+
+/// Bundles the three context refs needed to render a Request into a wire form.
+/// Lives only inside `execute`; callers don't construct it directly.
+struct RenderCtx<'a, 'b> {
+    env: &'a ResolveCtx<'a>,
+    dyn_ctx: &'a DynCtx<'a>,
+    reg: &'b mut SecretRegistry,
+}
+
+impl RenderCtx<'_, '_> {
+    fn interp(&mut self, s: &str) -> Result<String, CoreError> {
+        let i = interpolate_with_dyn(s, self.env, self.dyn_ctx)?;
+        self.reg.extend(&i.used_secrets);
+        Ok(i.value)
+    }
+}
 use chrono::{DateTime, Utc};
 use http::Method;
 use std::path::PathBuf;
@@ -119,20 +136,22 @@ pub async fn execute(
     http: &dyn HttpSender,
     clock: &dyn Clock,
 ) -> Result<Executed, ExecError> {
-    let dyn_ctx = crate::dynvars::DynCtx { clock };
-    let url_i = crate::env::interpolate_with_dyn(&req.url.0 .0, ctx, &dyn_ctx)?;
-    let mut headers: Vec<(String, String)> = Vec::new();
+    let dyn_ctx = DynCtx { clock };
     let mut reg = SecretRegistry::new();
-    reg.extend(&url_i.used_secrets);
+    let mut rc = RenderCtx {
+        env: ctx,
+        dyn_ctx: &dyn_ctx,
+        reg: &mut reg,
+    };
+    let url_value = rc.interp(&req.url.0 .0)?;
+    let mut headers: Vec<(String, String)> = Vec::new();
     for kv in req.headers.iter().filter(|k| k.enabled) {
-        let v = crate::env::interpolate_with_dyn(&kv.value, ctx, &dyn_ctx)?;
-        reg.extend(&v.used_secrets);
-        headers.push((kv.key.clone(), v.value));
+        headers.push((kv.key.clone(), rc.interp(&kv.value)?));
     }
-    let body_bytes = render_body(&req.body, ctx, &dyn_ctx, &mut reg)?;
-    let url = apply_query(&url_i.value, &req.query, ctx, &dyn_ctx, &mut reg)?;
+    let body_bytes = render_body(&req.body, &mut rc)?;
+    let url = apply_query(&url_value, &req.query, &mut rc)?;
     let multipart = if let Body::Multipart(parts) = &req.body {
-        Some(render_multipart(parts, ctx, &dyn_ctx, &mut reg)?)
+        Some(render_multipart(parts, &mut rc)?)
     } else {
         None
     };
@@ -163,47 +182,35 @@ pub async fn execute(
     })
 }
 
-fn render_body(
-    b: &Body,
-    ctx: &ResolveCtx,
-    dyn_ctx: &crate::dynvars::DynCtx,
-    reg: &mut SecretRegistry,
-) -> Result<Vec<u8>, CoreError> {
+fn render_body(b: &Body, rc: &mut RenderCtx) -> Result<Vec<u8>, CoreError> {
     Ok(match b {
         Body::None => Vec::new(),
-        Body::Raw { text, .. } | Body::Json(text) => {
-            let i = crate::env::interpolate_with_dyn(text, ctx, dyn_ctx)?;
-            reg.extend(&i.used_secrets);
-            i.value.into_bytes()
-        }
+        Body::Raw { text, .. } | Body::Json(text) => rc.interp(text)?.into_bytes(),
         Body::Form(kvs) => {
             let mut s = String::new();
             for (i, kv) in kvs.iter().filter(|k| k.enabled).enumerate() {
                 if i > 0 {
                     s.push('&');
                 }
-                let v = crate::env::interpolate_with_dyn(&kv.value, ctx, dyn_ctx)?;
-                reg.extend(&v.used_secrets);
+                let v = rc.interp(&kv.value)?;
                 s.push_str(&urlencoding::encode(&kv.key));
                 s.push('=');
-                s.push_str(&urlencoding::encode(&v.value));
+                s.push_str(&urlencoding::encode(&v));
             }
             s.into_bytes()
         }
         Body::Multipart(_) | Body::File(_) => Vec::new(),
         Body::GraphQL { query, variables } => {
-            let q = crate::env::interpolate_with_dyn(query, ctx, dyn_ctx)?;
-            reg.extend(&q.used_secrets);
+            let q = rc.interp(query)?;
             let vars_value: serde_json::Value = if variables.trim().is_empty() {
                 serde_json::Value::Object(Default::default())
             } else {
-                let v = crate::env::interpolate_with_dyn(variables, ctx, dyn_ctx)?;
-                reg.extend(&v.used_secrets);
-                serde_json::from_str(&v.value).map_err(|e| {
+                let v = rc.interp(variables)?;
+                serde_json::from_str(&v).map_err(|e| {
                     CoreError::InvalidTemplate(format!("graphql variables: {e}"))
                 })?
             };
-            let body = serde_json::json!({ "query": q.value, "variables": vars_value });
+            let body = serde_json::json!({ "query": q, "variables": vars_value });
             serde_json::to_vec(&body).map_err(|e| CoreError::InvalidTemplate(e.to_string()))?
         }
     })
@@ -211,18 +218,12 @@ fn render_body(
 
 fn render_multipart(
     parts: &[crate::catalog::Part],
-    ctx: &ResolveCtx,
-    dyn_ctx: &crate::dynvars::DynCtx,
-    reg: &mut SecretRegistry,
+    rc: &mut RenderCtx,
 ) -> Result<Vec<MultipartField>, CoreError> {
     let mut out = Vec::with_capacity(parts.len());
     for p in parts {
         let kind = match &p.content {
-            PartContent::Text(t) => {
-                let i = crate::env::interpolate_with_dyn(t, ctx, dyn_ctx)?;
-                reg.extend(&i.used_secrets);
-                MultipartKind::Text(i.value)
-            }
+            PartContent::Text(t) => MultipartKind::Text(rc.interp(t)?),
             PartContent::File(path) => MultipartKind::File(path.clone()),
         };
         out.push(MultipartField {
@@ -237,20 +238,17 @@ fn render_multipart(
 fn apply_query(
     url: &str,
     q: &[crate::primitives::KV],
-    ctx: &ResolveCtx,
-    dyn_ctx: &crate::dynvars::DynCtx,
-    reg: &mut SecretRegistry,
+    rc: &mut RenderCtx,
 ) -> Result<String, CoreError> {
     let mut out = url.to_string();
     let mut first = !out.contains('?');
     for kv in q.iter().filter(|k| k.enabled) {
         out.push(if first { '?' } else { '&' });
         first = false;
-        let v = crate::env::interpolate_with_dyn(&kv.value, ctx, dyn_ctx)?;
-        reg.extend(&v.used_secrets);
+        let v = rc.interp(&kv.value)?;
         out.push_str(&urlencoding::encode(&kv.key));
         out.push('=');
-        out.push_str(&urlencoding::encode(&v.value));
+        out.push_str(&urlencoding::encode(&v));
     }
     Ok(out)
 }
