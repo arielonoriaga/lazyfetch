@@ -192,3 +192,28 @@ fn apply_query(
     }
     Ok(out)
 }
+
+/// Render a redacted, paste-safe cURL command for `req`.
+/// Each arg is single-quoted; inner `'` is escaped as `'\''` (POSIX-portable).
+/// All header values + URL + body run through `reg.redact()` first.
+pub fn build_curl(req: &WireRequest, reg: &SecretRegistry) -> String {
+    fn q(s: &str) -> String {
+        format!("'{}'", s.replace('\'', "'\\''"))
+    }
+    let mut out = String::from("curl ");
+    if req.method != http::Method::GET {
+        out.push_str(&format!("-X {} ", req.method));
+    }
+    for (k, v) in &req.headers {
+        let v = reg.redact(v);
+        out.push_str(&format!("-H {} ", q(&format!("{k}: {v}"))));
+    }
+    if !req.body_bytes.is_empty() {
+        let body = std::str::from_utf8(&req.body_bytes)
+            .map(|s| reg.redact(s))
+            .unwrap_or_else(|_| "<binary>".into());
+        out.push_str(&format!("-d {} ", q(&body)));
+    }
+    out.push_str(&q(&reg.redact(&req.url)));
+    out.trim_end().to_string()
+}
