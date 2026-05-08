@@ -1,0 +1,5 @@
+curl 'https://api.test/users' \
+  -X POST \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer abc.def.ghi' \
+  --data-raw '{"name":"alice"}'

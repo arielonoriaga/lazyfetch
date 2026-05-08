@@ -1,0 +1,3 @@
+curl -X POST 'https://api.test/upload' \
+  -F 'meta=hello' \
+  -F 'avatar=@/tmp/pic.png'

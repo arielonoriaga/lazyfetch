@@ -1,0 +1,4 @@
+curl https://api.test/x \
+  -H 'Content-Type: text/plain' \
+  -H 'Content-Type: application/json' \
+  -d '{"a":1}'

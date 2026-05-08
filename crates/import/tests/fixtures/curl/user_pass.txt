@@ -1,0 +1,1 @@
+curl -u alice:hunter2 https://api.test/me

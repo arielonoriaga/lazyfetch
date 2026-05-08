@@ -1,0 +1,1 @@
+curl 'https://api.test/x' -H $'X-Trace: line1\nline2'

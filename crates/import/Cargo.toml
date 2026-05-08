@@ -19,3 +19,4 @@ serde_json = { workspace = true }
 thiserror  = { workspace = true }
 http       = { workspace = true }
 ulid       = { workspace = true }
+urlencoding = "2"
