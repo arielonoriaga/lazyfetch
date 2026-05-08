@@ -1,13 +1,8 @@
 use crate::app::AppState;
-use lazyfetch_auth::resolver::DefaultResolver;
-use lazyfetch_auth::NoCache;
 use lazyfetch_core::catalog::{Body, Request};
 use lazyfetch_core::env::{Environment, ResolveCtx, VarValue};
 use lazyfetch_core::exec::{execute, AuthChain, ExecError, Executed};
-use lazyfetch_core::ports::SystemClock;
 use lazyfetch_core::primitives::{Template, UrlTemplate};
-use lazyfetch_http::ReqwestSender;
-use secrecy::SecretString;
 use std::sync::mpsc;
 use tokio::runtime::Handle;
 use ulid::Ulid;
@@ -49,27 +44,32 @@ pub fn dispatch_request(
             name: "_empty".into(),
             vars: vec![],
         });
-    let overrides: Vec<(String, VarValue)> = vec![];
-    let coll_vars: Vec<(String, VarValue)> = vec![];
+    // Clone the injected adapter handles so the spawned future is 'static.
+    let adapters = state.adapters.clone();
 
     rt.spawn(async move {
+        let overrides: Vec<(String, VarValue)> = vec![];
+        let coll_vars: Vec<(String, VarValue)> = vec![];
         let ctx = ResolveCtx {
             env: &env,
             collection_vars: &coll_vars,
             overrides: &overrides,
         };
-        let resolver = DefaultResolver::new();
-        let cache = NoCache;
-        let http = ReqwestSender::new();
-        let clock = SystemClock;
         let chain = AuthChain {
             folders: &[],
             collection: None,
         };
-        let result = execute(&req, &ctx, chain, &resolver, &cache, &http, &clock).await;
+        let result = execute(
+            &req,
+            &ctx,
+            chain,
+            &*adapters.auth_resolver,
+            &*adapters.auth_cache,
+            &*adapters.http,
+            &*adapters.clock,
+        )
+        .await;
         let _ = tx.send(result);
-        // Touch types so unused warnings stay quiet across feature toggles.
-        let _ = SecretString::new(String::new());
     });
     rx
 }

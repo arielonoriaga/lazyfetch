@@ -1221,13 +1221,12 @@ name = "lazyfetch-tui"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "chrono",
  "crossterm",
  "http",
  "insta",
- "lazyfetch-auth",
  "lazyfetch-core",
- "lazyfetch-http",
  "lazyfetch-storage",
  "ratatui",
  "secrecy",

@@ -1,3 +1,4 @@
+use crate::adapters::Adapters;
 use crate::editor::BodyEditorState;
 use crate::kv_editor::KvEditor;
 use lazyfetch_core::catalog::{BodyKind, Collection};
@@ -224,6 +225,7 @@ pub struct AppState {
     pub form_kv: KvEditor,
     pub import_curl_buf: String,
     pub body_editing: bool,
+    pub adapters: Adapters,
 }
 
 impl AppState {
@@ -287,7 +289,15 @@ impl AppState {
             form_kv: KvEditor::new(),
             import_curl_buf: String::new(),
             body_editing: false,
+            adapters: Adapters::testing(),
         }
+    }
+
+    /// Replace the test-default adapter bundle. Composition root (bin)
+    /// calls this to inject the production HTTP / auth implementations.
+    pub fn with_adapters(mut self, adapters: Adapters) -> Self {
+        self.adapters = adapters;
+        self
     }
 
     pub fn active_env_mut(&mut self) -> Option<&mut Environment> {
