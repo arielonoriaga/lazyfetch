@@ -185,7 +185,7 @@ pub async fn execute(
 fn render_body(b: &Body, rc: &mut RenderCtx) -> Result<Vec<u8>, CoreError> {
     Ok(match b {
         Body::None => Vec::new(),
-        Body::Raw { text, .. } | Body::Json(text) => rc.interp(text)?.into_bytes(),
+        Body::Raw { text, .. } | Body::Json { text } => rc.interp(text)?.into_bytes(),
         Body::Form(kvs) => {
             let mut s = String::new();
             for (i, kv) in kvs.iter().filter(|k| k.enabled).enumerate() {

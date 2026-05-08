@@ -147,7 +147,7 @@ fn convert_body(b: &PmBody, report: &mut ImportReport) -> Body {
                 .unwrap_or_else(|| "text/plain".into());
             let text = b.raw.clone().unwrap_or_default();
             if mime == "json" || mime == "application/json" {
-                Body::Json(text)
+                Body::Json { text }
             } else {
                 Body::Raw { mime, text }
             }
@@ -175,7 +175,7 @@ fn convert_body(b: &PmBody, report: &mut ImportReport) -> Body {
                     .to_string()
                 })
                 .unwrap_or_default();
-            Body::Json(body)
+            Body::Json { text: body }
         }
         other => {
             report

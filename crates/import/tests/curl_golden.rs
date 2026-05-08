@@ -18,7 +18,7 @@ fn parses_chrome_post_json() {
     let s = include_str!("fixtures/curl/chrome_post_json.txt");
     let (req, _) = curl::parse(s).unwrap();
     assert_eq!(req.method, http::Method::POST);
-    assert!(matches!(&req.body, Body::Json(t) if t == "{\"name\":\"alice\"}"));
+    assert!(matches!(&req.body, Body::Json { text } if text == "{\"name\":\"alice\"}"));
     assert!(req
         .headers
         .iter()
@@ -122,7 +122,7 @@ fn rejects_cmd_shell() {
 fn last_content_type_wins() {
     let s = include_str!("fixtures/curl/last_content_type_wins.txt");
     let (req, _) = curl::parse(s).unwrap();
-    assert!(matches!(&req.body, Body::Json(t) if t == "{\"a\":1}"));
+    assert!(matches!(&req.body, Body::Json { text } if text == "{\"a\":1}"));
 }
 
 #[test]

@@ -402,7 +402,7 @@ fn assemble(mut tokens: Vec<String>) -> Result<(Request, ImportReport), CurlErro
         } else if !data_parts.is_empty() {
             let text = data_parts.join("&");
             if ct_lc == "application/json" {
-                body = Body::Json(text);
+                body = Body::Json { text };
             } else if ct.is_empty() {
                 body = Body::Raw {
                     mime: "text/plain".into(),

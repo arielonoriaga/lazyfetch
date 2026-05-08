@@ -49,6 +49,51 @@ fn random_int_bounds_invalid() {
 }
 
 #[test]
+fn random_int_negative_bounds() {
+    for _ in 0..200 {
+        let s = resolve("randomInt", &[Arg::str("-10"), Arg::str("-5")], &ctx()).unwrap();
+        let n: i64 = s.parse().unwrap();
+        assert!((-10..=-5).contains(&n), "got {n}");
+    }
+}
+
+#[test]
+fn random_int_cross_zero() {
+    let mut saw_neg = false;
+    let mut saw_pos = false;
+    for _ in 0..500 {
+        let s = resolve("randomInt", &[Arg::str("-3"), Arg::str("3")], &ctx()).unwrap();
+        let n: i64 = s.parse().unwrap();
+        assert!((-3..=3).contains(&n));
+        if n < 0 {
+            saw_neg = true;
+        }
+        if n > 0 {
+            saw_pos = true;
+        }
+    }
+    assert!(saw_neg && saw_pos, "expected both signs over 500 draws");
+}
+
+#[test]
+fn random_int_min_equals_max_returns_that_value() {
+    let s = resolve("randomInt", &[Arg::str("42"), Arg::str("42")], &ctx()).unwrap();
+    assert_eq!(s, "42");
+}
+
+#[test]
+fn random_int_non_numeric_arg_errors() {
+    let r = resolve("randomInt", &[Arg::str("foo"), Arg::str("9")], &ctx());
+    assert!(matches!(r, Err(DynError::ArgParse { .. })));
+}
+
+#[test]
+fn random_int_wrong_arg_count_errors() {
+    let r = resolve("randomInt", &[Arg::str("1")], &ctx());
+    assert!(matches!(r, Err(DynError::ArgParse { .. })));
+}
+
+#[test]
 fn base64_literal() {
     let s = resolve("base64", &[Arg::str("foo")], &ctx()).unwrap();
     assert_eq!(s, "Zm9v");
