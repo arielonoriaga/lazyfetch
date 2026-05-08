@@ -7,6 +7,7 @@ use crate::motion::{
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 mod request;
+mod url;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
@@ -232,7 +233,7 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
             (KeyCode::Up, _) => Action::FocusDir(Dir::Up),
             (KeyCode::Down, _) => Action::FocusDir(Dir::Down),
             (KeyCode::Esc, _) => Action::FocusDir(Dir::Down),
-            _ => dispatch_url(ev),
+            _ => url::dispatch(ev),
         };
     }
     match (ev.code, ev.modifiers) {
@@ -339,17 +340,6 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
     }
 }
 
-fn dispatch_url(ev: KeyEvent) -> Action {
-    match (ev.code, ev.modifiers) {
-        (KeyCode::Backspace, _) => Action::UrlBackspace,
-        (KeyCode::Enter, _) => Action::UrlSubmit,
-        (KeyCode::Char(c), KeyModifiers::NONE) | (KeyCode::Char(c), KeyModifiers::SHIFT) => {
-            Action::UrlChar(c)
-        }
-        _ => Action::NoOp,
-    }
-}
-
 fn dispatch_collections(ev: KeyEvent) -> Action {
     match (ev.code, ev.modifiers) {
         (KeyCode::Char('j'), _) => Action::CollCursorDown,
@@ -408,6 +398,9 @@ fn dispatch_insert(ev: KeyEvent) -> Action {
 /// `event::run` saves after `EnvAdd` / `EnvDelete` / `EnvToggleSecret` / `CommandSubmit (env switch)`.
 pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
     if let Some(dirty) = request::apply_action(state, &action) {
+        return dirty;
+    }
+    if let Some(dirty) = url::apply_action(state, &action) {
         return dirty;
     }
     match action {
@@ -569,58 +562,16 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
             state.messages_open = false;
             EnvDirty::No
         }
-        Action::UrlChar(c) => {
-            state.url_buf.push(c);
-            state.url_suggest_idx = 0;
-            EnvDirty::No
-        }
-        Action::UrlBackspace => {
-            state.url_buf.pop();
-            state.url_suggest_idx = 0;
-            EnvDirty::No
-        }
-        Action::UrlSuggestNext => {
-            let n = state.url_var_suggestions().len();
-            if n > 0 {
-                state.url_suggest_idx = (state.url_suggest_idx + 1) % n;
-            }
-            EnvDirty::No
-        }
-        Action::UrlSuggestPrev => {
-            let n = state.url_var_suggestions().len();
-            if n > 0 {
-                state.url_suggest_idx = (state.url_suggest_idx + n - 1) % n;
-            }
-            EnvDirty::No
-        }
-        Action::UrlSuggestAccept => {
-            let suggestions = state.url_var_suggestions();
-            if let Some(name) = suggestions.get(state.url_suggest_idx).cloned() {
-                state.url_complete_var(&name);
-            }
-            EnvDirty::No
-        }
-        Action::UrlSuggestDismiss => {
-            // Insert a `}}` to close the token so the suggestion list collapses.
-            state.url_buf.push_str("}}");
-            state.url_suggest_idx = 0;
-            EnvDirty::No
-        }
-        Action::UrlSubmit => {
-            state.notify(format!("URL: {}", state.url_buf));
-            state.focus = Focus::Request;
-            EnvDirty::No
-        }
-        Action::MethodNext => {
-            state.method = next_method(&state.method);
-            state.notify(format!("method: {}", state.method));
-            EnvDirty::No
-        }
-        Action::MethodPrev => {
-            state.method = prev_method(&state.method);
-            state.notify(format!("method: {}", state.method));
-            EnvDirty::No
-        }
+        // Url + Method actions handled by `url::apply_action` early-exit above.
+        Action::UrlChar(_)
+        | Action::UrlBackspace
+        | Action::UrlSuggestNext
+        | Action::UrlSuggestPrev
+        | Action::UrlSuggestAccept
+        | Action::UrlSuggestDismiss
+        | Action::UrlSubmit
+        | Action::MethodNext
+        | Action::MethodPrev => EnvDirty::No,
         Action::SendRequest => {
             // Sentinel — the event loop owns the tokio Handle and dispatches.
             EnvDirty::No
@@ -1090,7 +1041,7 @@ pub enum EnvDirty {
 
 const METHODS: &[&str] = &["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
-fn next_method(current: &http::Method) -> http::Method {
+pub(super) fn next_method(current: &http::Method) -> http::Method {
     let i = METHODS
         .iter()
         .position(|m| *m == current.as_str())
@@ -1101,7 +1052,7 @@ fn next_method(current: &http::Method) -> http::Method {
         .expect("METHODS table contains valid HTTP methods")
 }
 
-fn prev_method(current: &http::Method) -> http::Method {
+pub(super) fn prev_method(current: &http::Method) -> http::Method {
     let i = METHODS
         .iter()
         .position(|m| *m == current.as_str())
