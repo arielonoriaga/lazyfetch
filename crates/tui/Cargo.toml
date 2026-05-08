@@ -1,15 +1,22 @@
 [package]
 name = "lazyfetch-tui"
-version = "0.1.0"
+description = "ratatui-based TUI front-end for lazyfetch"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
-lazyfetch-core    = { path = "../core" }
-lazyfetch-storage = { path = "../storage" }
-lazyfetch-http    = { path = "../http" }
-lazyfetch-auth    = { path = "../auth" }
+lazyfetch-core    = { workspace = true }
+lazyfetch-storage = { workspace = true }
+lazyfetch-http    = { workspace = true }
+lazyfetch-auth    = { workspace = true }
 ratatui           = "0.28"
 crossterm         = "0.28"
 anyhow            = { workspace = true }

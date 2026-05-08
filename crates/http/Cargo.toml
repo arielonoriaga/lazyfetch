@@ -1,12 +1,19 @@
 [package]
 name = "lazyfetch-http"
-version = "0.1.0"
+description = "reqwest HttpSender adapter for lazyfetch"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
-lazyfetch-core = { path = "../core" }
+lazyfetch-core = { workspace = true }
 reqwest        = { version = "0.12", default-features = false, features = ["rustls-tls","gzip","brotli","deflate","stream","multipart"] }
 async-trait    = "0.1"
 tokio          = { workspace = true }

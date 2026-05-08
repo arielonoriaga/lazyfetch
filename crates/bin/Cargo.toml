@@ -1,17 +1,24 @@
 [package]
-name = "lazyfetch-bin"
-version = "0.1.0"
+name = "lazyfetch"
+description = "Terminal-first HTTP client. Postman alternative for the keyboard."
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
-lazyfetch-core    = { path = "../core" }
-lazyfetch-http    = { path = "../http" }
-lazyfetch-storage = { path = "../storage" }
-lazyfetch-auth    = { path = "../auth" }
-lazyfetch-tui     = { path = "../tui" }
-lazyfetch-import  = { path = "../import" }
+lazyfetch-core    = { workspace = true }
+lazyfetch-http    = { workspace = true }
+lazyfetch-storage = { workspace = true }
+lazyfetch-auth    = { workspace = true }
+lazyfetch-tui     = { workspace = true }
+lazyfetch-import  = { workspace = true }
 clap              = { version = "4", features = ["derive"] }
 tokio             = { workspace = true }
 anyhow            = { workspace = true }

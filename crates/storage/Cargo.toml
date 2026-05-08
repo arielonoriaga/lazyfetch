@@ -1,12 +1,19 @@
 [package]
 name = "lazyfetch-storage"
-version = "0.1.0"
+description = "Filesystem adapters for lazyfetch — atomic writes, YAML collections, JSONL history"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+readme = "../../README.md"
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
-lazyfetch-core = { path = "../core" }
+lazyfetch-core = { workspace = true }
 serde       = { workspace = true }
 serde_yaml  = { workspace = true }
 serde_json  = { workspace = true }

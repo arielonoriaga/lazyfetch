@@ -3,12 +3,27 @@ resolver = "2"
 members  = ["crates/core","crates/http","crates/storage","crates/auth","crates/import","crates/tui","crates/bin"]
 
 [workspace.package]
+version = "0.1.0"
 edition = "2021"
 rust-version = "1.85"
 license = "MIT"
 authors = ["Ariel Onoriaga <onoriagaariel@gmail.com>"]
+homepage = "https://github.com/arielonoriaga/lazyfetch"
+repository = "https://github.com/arielonoriaga/lazyfetch"
+keywords = ["http", "tui", "postman", "cli", "ratatui"]
+categories = ["command-line-utilities", "development-tools", "network-programming"]
 
 [workspace.dependencies]
+# Internal crates — published to crates.io as `lazyfetch-*`. Each crate
+# Cargo.toml uses `path` for local builds and `version` for crates.io.
+lazyfetch-core    = { path = "crates/core",    version = "0.1.0" }
+lazyfetch-http    = { path = "crates/http",    version = "0.1.0" }
+lazyfetch-storage = { path = "crates/storage", version = "0.1.0" }
+lazyfetch-auth    = { path = "crates/auth",    version = "0.1.0" }
+lazyfetch-import  = { path = "crates/import",  version = "0.1.0" }
+lazyfetch-tui     = { path = "crates/tui",     version = "0.1.0" }
+
+# External crates.
 serde       = { version = "1", features = ["derive"] }
 serde_json  = "1"
 serde_yaml  = "0.9"
