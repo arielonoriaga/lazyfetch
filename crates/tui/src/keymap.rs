@@ -93,6 +93,30 @@ pub enum Action {
     SaveAsBackspace,
     SaveAsSubmit,
     SaveAsCancel,
+    CurlExport,
+    RepeatLast,
+    ReqTabSwitch(crate::app::ReqTab),
+    ReqTabCycle,
+    BodyKindCycle,
+    KvCursorUp,
+    KvCursorDown,
+    KvAdd,
+    KvEditValue,
+    KvToggleEnabled,
+    KvDelete,
+    KvToggleSecret,
+    KvToggleKind,
+    KvInsertChar(char),
+    KvInsertBackspace,
+    KvInsertTab,
+    KvCommit,
+    KvCancel,
+    BodyEnterEdit,
+    BodyExitEdit,
+    BodyInputChar(char),
+    BodyInputBackspace,
+    BodyInputNewline,
+    BodyShellOut,
     NoOp,
 }
 
@@ -122,6 +146,96 @@ pub fn dispatch(state: &AppState, ev: KeyEvent) -> Action {
         Mode::SaveAs => dispatch_save_as(ev),
         Mode::Rename => dispatch_rename(ev),
         Mode::Move => dispatch_move(ev),
+        Mode::ImportCurl => Action::NoOp,
+    }
+}
+
+/// Request-pane keymap. Returns `Some(action)` when the pane consumes the key,
+/// `None` to fall through to global navigation (so `Tab`/`h`/`l` etc. still
+/// switch panes when not editing).
+fn dispatch_request_pane(state: &AppState, ev: KeyEvent) -> Option<Action> {
+    use crate::app::ReqTab;
+    use crate::kv_editor::KvMode;
+    if state.body_editing {
+        return Some(match (ev.code, ev.modifiers) {
+            (KeyCode::Esc, _) => Action::BodyExitEdit,
+            (KeyCode::Enter, _) => Action::BodyInputNewline,
+            (KeyCode::Backspace, _) => Action::BodyInputBackspace,
+            (KeyCode::Char(c), KeyModifiers::NONE) | (KeyCode::Char(c), KeyModifiers::SHIFT) => {
+                Action::BodyInputChar(c)
+            }
+            _ => Action::NoOp,
+        });
+    }
+    let kv_mode = active_kv_mode(state);
+    if !matches!(kv_mode, KvMode::Normal) {
+        return Some(match (ev.code, ev.modifiers) {
+            (KeyCode::Esc, _) => Action::KvCancel,
+            (KeyCode::Enter, _) => Action::KvCommit,
+            (KeyCode::Tab, _) => Action::KvInsertTab,
+            (KeyCode::Backspace, _) => Action::KvInsertBackspace,
+            (KeyCode::Char(c), KeyModifiers::NONE) | (KeyCode::Char(c), KeyModifiers::SHIFT) => {
+                Action::KvInsertChar(c)
+            }
+            _ => Action::NoOp,
+        });
+    }
+    match (ev.code, ev.modifiers) {
+        (KeyCode::Char('1'), KeyModifiers::NONE) => Some(Action::ReqTabSwitch(ReqTab::Body)),
+        (KeyCode::Char('2'), KeyModifiers::NONE) => Some(Action::ReqTabSwitch(ReqTab::Headers)),
+        (KeyCode::Char('3'), KeyModifiers::NONE) => Some(Action::ReqTabSwitch(ReqTab::Query)),
+        (KeyCode::Char(' '), KeyModifiers::NONE) => Some(Action::ReqTabCycle),
+        (KeyCode::Char('t'), KeyModifiers::NONE) if state.req_tab == ReqTab::Body => {
+            Some(Action::BodyKindCycle)
+        }
+        (KeyCode::Char('j'), KeyModifiers::NONE) if state.req_tab != ReqTab::Body => {
+            Some(Action::KvCursorDown)
+        }
+        (KeyCode::Char('k'), KeyModifiers::NONE) if state.req_tab != ReqTab::Body => {
+            Some(Action::KvCursorUp)
+        }
+        (KeyCode::Down, _) if state.req_tab != ReqTab::Body => Some(Action::KvCursorDown),
+        (KeyCode::Up, _) if state.req_tab != ReqTab::Body => Some(Action::KvCursorUp),
+        (KeyCode::Char('a'), KeyModifiers::NONE) if state.req_tab != ReqTab::Body => {
+            Some(Action::KvAdd)
+        }
+        (KeyCode::Char('i'), KeyModifiers::NONE) if state.req_tab != ReqTab::Body => {
+            Some(Action::KvEditValue)
+        }
+        (KeyCode::Char('i'), KeyModifiers::NONE) if state.req_tab == ReqTab::Body => {
+            Some(Action::BodyEnterEdit)
+        }
+        (KeyCode::Char('a'), KeyModifiers::NONE) if state.req_tab == ReqTab::Body => {
+            Some(Action::BodyEnterEdit)
+        }
+        (KeyCode::Char('e'), KeyModifiers::NONE) if state.req_tab == ReqTab::Body => {
+            Some(Action::BodyShellOut)
+        }
+        (KeyCode::Char('x'), KeyModifiers::NONE) if state.req_tab != ReqTab::Body => {
+            Some(Action::KvToggleEnabled)
+        }
+        (KeyCode::Char('d'), KeyModifiers::NONE) if state.req_tab != ReqTab::Body => {
+            Some(Action::KvDelete)
+        }
+        (KeyCode::Char('m'), KeyModifiers::NONE) if state.req_tab != ReqTab::Body => {
+            Some(Action::KvToggleSecret)
+        }
+        (KeyCode::Char('f'), KeyModifiers::NONE)
+            if state.req_tab == ReqTab::Body
+                && state.req_body_kind == lazyfetch_core::catalog::BodyKind::Multipart =>
+        {
+            Some(Action::KvToggleKind)
+        }
+        _ => None,
+    }
+}
+
+fn active_kv_mode(state: &AppState) -> crate::kv_editor::KvMode {
+    use crate::app::ReqTab;
+    match state.req_tab {
+        ReqTab::Headers => state.headers_kv.mode,
+        ReqTab::Query => state.query_kv.mode,
+        ReqTab::Body => state.form_kv.mode,
     }
 }
 
@@ -175,6 +289,11 @@ fn dispatch_search(ev: KeyEvent) -> Action {
 }
 
 fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
+    if state.focus == Focus::Request {
+        if let Some(a) = dispatch_request_pane(state, ev) {
+            return a;
+        }
+    }
     // URL bar is a text input — chars go to the buffer, not to global keymap.
     // Only navigation/control keys escape it.
     if state.focus == Focus::Url {
@@ -282,6 +401,8 @@ fn dispatch_normal(state: &AppState, ev: KeyEvent) -> Action {
         (KeyCode::Char('y'), KeyModifiers::NONE) if state.focus == Focus::Response => {
             Action::YankSelection
         }
+        (KeyCode::Char('Y'), _) if state.focus == Focus::Response => Action::CurlExport,
+        (KeyCode::Char('R'), _) => Action::RepeatLast,
         (KeyCode::Esc, _) if state.focus == Focus::Response && state.visual_anchor.is_some() => {
             Action::EscapeVisual
         }
@@ -1002,7 +1123,199 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
             run_save(state, path.trim());
             EnvDirty::No
         }
+        Action::CurlExport => {
+            if let Some(executed) = &state.last_response {
+                let curl =
+                    lazyfetch_core::exec::build_curl(&executed.request_snapshot, &executed.secrets);
+                let len = curl.len();
+                match crate::motion::copy_to_clipboard(&curl) {
+                    Ok(()) => state.notify(format!("cURL → clipboard ({len} chars)")),
+                    Err(e) => state.notify(format!("clipboard failed: {e}")),
+                }
+            } else {
+                state.notify("nothing sent yet".to_string());
+            }
+            EnvDirty::No
+        }
+        Action::RepeatLast => EnvDirty::No,
+        Action::ReqTabSwitch(t) => {
+            state.req_tab = t;
+            EnvDirty::No
+        }
+        Action::ReqTabCycle => {
+            state.req_tab = state.req_tab.cycle();
+            EnvDirty::No
+        }
+        Action::BodyKindCycle => {
+            use lazyfetch_core::catalog::BodyKind;
+            // Stash the current editor's text in body_scratch so a switch through a
+            // KV-backed kind (Form/Multipart/None/File) doesn't drop typed body text.
+            let prev = state.body_editor.text();
+            if !prev.is_empty() {
+                state.body_scratch = prev.clone();
+            }
+            state.req_body_kind = match state.req_body_kind {
+                BodyKind::None => BodyKind::Raw,
+                BodyKind::Raw => BodyKind::Json,
+                BodyKind::Json => BodyKind::Form,
+                BodyKind::Form => BodyKind::Multipart,
+                BodyKind::Multipart => BodyKind::GraphQL,
+                BodyKind::GraphQL => BodyKind::File,
+                BodyKind::File => BodyKind::None,
+            };
+            let restore = if prev.is_empty() {
+                state.body_scratch.clone()
+            } else {
+                prev
+            };
+            state.body_editor =
+                crate::editor::BodyEditorState::for_kind(state.req_body_kind, &restore);
+            EnvDirty::No
+        }
+        Action::KvCursorUp => {
+            active_kv_mut(state).move_up();
+            EnvDirty::No
+        }
+        Action::KvCursorDown => {
+            active_kv_mut(state).move_down();
+            EnvDirty::No
+        }
+        Action::KvAdd => {
+            active_kv_mut(state).start_add();
+            EnvDirty::No
+        }
+        Action::KvEditValue => {
+            active_kv_mut(state).start_edit_value();
+            EnvDirty::No
+        }
+        Action::KvToggleEnabled => {
+            active_kv_mut(state).toggle_enabled();
+            EnvDirty::No
+        }
+        Action::KvDelete => {
+            active_kv_mut(state).delete();
+            EnvDirty::No
+        }
+        Action::KvToggleSecret => {
+            active_kv_mut(state).toggle_secret();
+            EnvDirty::No
+        }
+        Action::KvToggleKind => {
+            active_kv_mut(state).toggle_kind();
+            EnvDirty::No
+        }
+        Action::KvInsertChar(c) => {
+            active_kv_mut(state).insert_char(c);
+            EnvDirty::No
+        }
+        Action::KvInsertBackspace => {
+            active_kv_mut(state).backspace();
+            EnvDirty::No
+        }
+        Action::KvInsertTab => {
+            active_kv_mut(state).tab();
+            EnvDirty::No
+        }
+        Action::KvCommit => {
+            active_kv_mut(state).commit();
+            EnvDirty::No
+        }
+        Action::KvCancel => {
+            active_kv_mut(state).cancel();
+            EnvDirty::No
+        }
+        Action::BodyEnterEdit => {
+            use crate::editor::BodyEditorState;
+            use lazyfetch_core::catalog::BodyKind;
+            if matches!(state.req_body_kind, BodyKind::None | BodyKind::File) {
+                state.req_body_kind = BodyKind::Raw;
+            }
+            if matches!(state.body_editor, BodyEditorState::None) {
+                let prev = state.body_editor.text();
+                state.body_editor = BodyEditorState::for_kind(state.req_body_kind, &prev);
+            }
+            state.body_editing = true;
+            state.notify("body insert mode — Esc to exit · :e to shell out".into());
+            EnvDirty::No
+        }
+        Action::BodyExitEdit => {
+            state.body_editing = false;
+            EnvDirty::No
+        }
+        Action::BodyInputChar(c) => {
+            use crate::editor::BodyEditorState;
+            match &mut state.body_editor {
+                BodyEditorState::Single(ta) => {
+                    ta.insert_char(c);
+                }
+                BodyEditorState::Split {
+                    query,
+                    focus: crate::editor::GraphQlFocus::Query,
+                    ..
+                } => {
+                    query.insert_char(c);
+                }
+                BodyEditorState::Split { variables, .. } => {
+                    variables.insert_char(c);
+                }
+                BodyEditorState::None => {}
+            }
+            EnvDirty::No
+        }
+        Action::BodyInputNewline => {
+            use crate::editor::BodyEditorState;
+            match &mut state.body_editor {
+                BodyEditorState::Single(ta) => {
+                    ta.insert_newline();
+                }
+                BodyEditorState::Split {
+                    query,
+                    focus: crate::editor::GraphQlFocus::Query,
+                    ..
+                } => {
+                    query.insert_newline();
+                }
+                BodyEditorState::Split { variables, .. } => {
+                    variables.insert_newline();
+                }
+                BodyEditorState::None => {}
+            }
+            EnvDirty::No
+        }
+        Action::BodyInputBackspace => {
+            use crate::editor::BodyEditorState;
+            match &mut state.body_editor {
+                BodyEditorState::Single(ta) => {
+                    ta.delete_char();
+                }
+                BodyEditorState::Split {
+                    query,
+                    focus: crate::editor::GraphQlFocus::Query,
+                    ..
+                } => {
+                    query.delete_char();
+                }
+                BodyEditorState::Split { variables, .. } => {
+                    variables.delete_char();
+                }
+                BodyEditorState::None => {}
+            }
+            EnvDirty::No
+        }
+        Action::BodyShellOut => {
+            // Sentinel — handled in event::run (needs &mut TerminalGuard).
+            EnvDirty::No
+        }
         Action::NoOp => EnvDirty::No,
+    }
+}
+
+fn active_kv_mut(state: &mut AppState) -> &mut crate::kv_editor::KvEditor {
+    use crate::app::ReqTab;
+    match state.req_tab {
+        ReqTab::Headers => &mut state.headers_kv,
+        ReqTab::Query => &mut state.query_kv,
+        ReqTab::Body => &mut state.form_kv,
     }
 }
 

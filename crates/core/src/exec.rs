@@ -1,12 +1,29 @@
 use crate::auth::{AuthCache, AuthError, AuthResolver, AuthSpec};
-use crate::catalog::{Body, Request};
+use crate::catalog::{Body, PartContent, Request};
 use crate::env::ResolveCtx;
 use crate::error::CoreError;
 use crate::ports::Clock;
 use crate::secret::SecretRegistry;
 use chrono::{DateTime, Utc};
 use http::Method;
+use std::path::PathBuf;
 use std::time::Duration;
+
+/// One field of a multipart/form-data body. Lives on `WireRequest` as a sidecar so the
+/// reqwest adapter can build a `multipart::Form` (which owns the boundary + chunked
+/// streaming for files). `body_bytes` is empty when `multipart` is set.
+#[derive(Debug, Clone)]
+pub struct MultipartField {
+    pub name: String,
+    pub kind: MultipartKind,
+    pub filename: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub enum MultipartKind {
+    Text(String),
+    File(PathBuf),
+}
 
 #[derive(Debug, Clone)]
 pub struct WireRequest {
@@ -14,6 +31,9 @@ pub struct WireRequest {
     pub url: String,
     pub headers: Vec<(String, String)>,
     pub body_bytes: Vec<u8>,
+    /// When `Some`, the adapter sends a multipart/form-data body instead of raw bytes.
+    /// Mutually exclusive with non-empty `body_bytes`.
+    pub multipart: Option<Vec<MultipartField>>,
     pub timeout: Duration,
     pub follow_redirects: bool,
     pub max_redirects: u8,
@@ -49,6 +69,9 @@ pub enum SendError {
 
 #[derive(Debug, Clone)]
 pub struct Executed {
+    /// Pre-interpolation Request (with `{{var}}` placeholders intact). Used by
+    /// repeat-last (`R`): replays against the current env so dyn-vars re-roll.
+    pub request_template: Request,
     pub request_snapshot: WireRequest,
     pub response: WireResponse,
     pub at: DateTime<Utc>,
@@ -96,22 +119,29 @@ pub async fn execute(
     http: &dyn HttpSender,
     clock: &dyn Clock,
 ) -> Result<Executed, ExecError> {
-    let url_i = crate::env::interpolate(&req.url.0 .0, ctx)?;
+    let dyn_ctx = crate::dynvars::DynCtx { clock };
+    let url_i = crate::env::interpolate_with_dyn(&req.url.0 .0, ctx, &dyn_ctx)?;
     let mut headers: Vec<(String, String)> = Vec::new();
     let mut reg = SecretRegistry::new();
     reg.extend(&url_i.used_secrets);
     for kv in req.headers.iter().filter(|k| k.enabled) {
-        let v = crate::env::interpolate(&kv.value, ctx)?;
+        let v = crate::env::interpolate_with_dyn(&kv.value, ctx, &dyn_ctx)?;
         reg.extend(&v.used_secrets);
         headers.push((kv.key.clone(), v.value));
     }
-    let body_bytes = render_body(&req.body, ctx, &mut reg)?;
-    let url = apply_query(&url_i.value, &req.query, ctx, &mut reg)?;
+    let body_bytes = render_body(&req.body, ctx, &dyn_ctx, &mut reg)?;
+    let url = apply_query(&url_i.value, &req.query, ctx, &dyn_ctx, &mut reg)?;
+    let multipart = if let Body::Multipart(parts) = &req.body {
+        Some(render_multipart(parts, ctx, &dyn_ctx, &mut reg)?)
+    } else {
+        None
+    };
     let mut wire = WireRequest {
         method: req.method.clone(),
         url,
         headers,
         body_bytes,
+        multipart,
         timeout: Duration::from_millis(req.timeout_ms.unwrap_or(30_000) as u64),
         follow_redirects: req.follow_redirects,
         max_redirects: req.max_redirects,
@@ -125,6 +155,7 @@ pub async fn execute(
     }
     let resp = http.send(wire.clone()).await?;
     Ok(Executed {
+        request_template: req.clone(),
         request_snapshot: redact_wire(&wire, &reg),
         response: resp,
         at: clock.now(),
@@ -132,11 +163,16 @@ pub async fn execute(
     })
 }
 
-fn render_body(b: &Body, ctx: &ResolveCtx, reg: &mut SecretRegistry) -> Result<Vec<u8>, CoreError> {
+fn render_body(
+    b: &Body,
+    ctx: &ResolveCtx,
+    dyn_ctx: &crate::dynvars::DynCtx,
+    reg: &mut SecretRegistry,
+) -> Result<Vec<u8>, CoreError> {
     Ok(match b {
         Body::None => Vec::new(),
         Body::Raw { text, .. } | Body::Json(text) => {
-            let i = crate::env::interpolate(text, ctx)?;
+            let i = crate::env::interpolate_with_dyn(text, ctx, dyn_ctx)?;
             reg.extend(&i.used_secrets);
             i.value.into_bytes()
         }
@@ -146,7 +182,7 @@ fn render_body(b: &Body, ctx: &ResolveCtx, reg: &mut SecretRegistry) -> Result<V
                 if i > 0 {
                     s.push('&');
                 }
-                let v = crate::env::interpolate(&kv.value, ctx)?;
+                let v = crate::env::interpolate_with_dyn(&kv.value, ctx, dyn_ctx)?;
                 reg.extend(&v.used_secrets);
                 s.push_str(&urlencoding::encode(&kv.key));
                 s.push('=');
@@ -155,13 +191,54 @@ fn render_body(b: &Body, ctx: &ResolveCtx, reg: &mut SecretRegistry) -> Result<V
             s.into_bytes()
         }
         Body::Multipart(_) | Body::File(_) => Vec::new(),
+        Body::GraphQL { query, variables } => {
+            let q = crate::env::interpolate_with_dyn(query, ctx, dyn_ctx)?;
+            reg.extend(&q.used_secrets);
+            let vars_value: serde_json::Value = if variables.trim().is_empty() {
+                serde_json::Value::Object(Default::default())
+            } else {
+                let v = crate::env::interpolate_with_dyn(variables, ctx, dyn_ctx)?;
+                reg.extend(&v.used_secrets);
+                serde_json::from_str(&v.value).map_err(|e| {
+                    CoreError::InvalidTemplate(format!("graphql variables: {e}"))
+                })?
+            };
+            let body = serde_json::json!({ "query": q.value, "variables": vars_value });
+            serde_json::to_vec(&body).map_err(|e| CoreError::InvalidTemplate(e.to_string()))?
+        }
     })
+}
+
+fn render_multipart(
+    parts: &[crate::catalog::Part],
+    ctx: &ResolveCtx,
+    dyn_ctx: &crate::dynvars::DynCtx,
+    reg: &mut SecretRegistry,
+) -> Result<Vec<MultipartField>, CoreError> {
+    let mut out = Vec::with_capacity(parts.len());
+    for p in parts {
+        let kind = match &p.content {
+            PartContent::Text(t) => {
+                let i = crate::env::interpolate_with_dyn(t, ctx, dyn_ctx)?;
+                reg.extend(&i.used_secrets);
+                MultipartKind::Text(i.value)
+            }
+            PartContent::File(path) => MultipartKind::File(path.clone()),
+        };
+        out.push(MultipartField {
+            name: p.name.clone(),
+            kind,
+            filename: p.filename.clone(),
+        });
+    }
+    Ok(out)
 }
 
 fn apply_query(
     url: &str,
     q: &[crate::primitives::KV],
     ctx: &ResolveCtx,
+    dyn_ctx: &crate::dynvars::DynCtx,
     reg: &mut SecretRegistry,
 ) -> Result<String, CoreError> {
     let mut out = url.to_string();
@@ -169,11 +246,36 @@ fn apply_query(
     for kv in q.iter().filter(|k| k.enabled) {
         out.push(if first { '?' } else { '&' });
         first = false;
-        let v = crate::env::interpolate(&kv.value, ctx)?;
+        let v = crate::env::interpolate_with_dyn(&kv.value, ctx, dyn_ctx)?;
         reg.extend(&v.used_secrets);
         out.push_str(&urlencoding::encode(&kv.key));
         out.push('=');
         out.push_str(&urlencoding::encode(&v.value));
     }
     Ok(out)
+}
+
+/// Render a redacted, paste-safe cURL command for `req`.
+/// Each arg is single-quoted; inner `'` is escaped as `'\''` (POSIX-portable).
+/// All header values + URL + body run through `reg.redact()` first.
+pub fn build_curl(req: &WireRequest, reg: &SecretRegistry) -> String {
+    fn q(s: &str) -> String {
+        format!("'{}'", s.replace('\'', "'\\''"))
+    }
+    let mut out = String::from("curl ");
+    if req.method != http::Method::GET {
+        out.push_str(&format!("-X {} ", req.method));
+    }
+    for (k, v) in &req.headers {
+        let v = reg.redact(v);
+        out.push_str(&format!("-H {} ", q(&format!("{k}: {v}"))));
+    }
+    if !req.body_bytes.is_empty() {
+        let body = std::str::from_utf8(&req.body_bytes)
+            .map(|s| reg.redact(s))
+            .unwrap_or_else(|_| "<binary>".into());
+        out.push_str(&format!("-d {} ", q(&body)));
+    }
+    out.push_str(&q(&reg.redact(&req.url)));
+    out.trim_end().to_string()
 }

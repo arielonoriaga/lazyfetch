@@ -29,6 +29,7 @@ impl AuthResolver for DefaultResolver {
         match spec {
             AuthSpec::None | AuthSpec::Inherit => Ok(()),
             AuthSpec::Bearer { token } => {
+                check_dyn_only(&token.0)?;
                 let i = interpolate(&token.0, ctx)?;
                 require_secret(&token.0, &i)?;
                 req.headers
@@ -37,6 +38,7 @@ impl AuthResolver for DefaultResolver {
                 Ok(())
             }
             AuthSpec::Basic { user, pass } => {
+                check_dyn_only(&pass.0)?;
                 let u = interpolate(&user.0, ctx)?;
                 let p = interpolate(&pass.0, ctx)?;
                 require_secret(&pass.0, &p)?;
@@ -53,6 +55,7 @@ impl AuthResolver for DefaultResolver {
                 value,
                 location,
             } => {
+                check_dyn_only(&value.0)?;
                 let v = interpolate(&value.0, ctx)?;
                 require_secret(&value.0, &v)?;
                 match location {
@@ -75,10 +78,44 @@ impl AuthResolver for DefaultResolver {
     }
 }
 
-fn require_secret(tpl: &str, i: &Interpolated) -> Result<(), AuthError> {
-    if tpl.contains("{{") && i.used_secrets.is_empty() && i.value != *tpl {
-        Err(AuthError::NotSecret(tpl.to_string()))
-    } else {
-        Ok(())
+/// Template-only pre-check: refuse a secret field whose template references *no* env vars,
+/// only dyn-vars. Such a token re-rolls per request → broken auth.
+fn check_dyn_only(tpl: &str) -> Result<(), AuthError> {
+    if !tpl.contains("{{") {
+        return Ok(());
     }
+    let has_var_ref = tpl.match_indices("{{").any(|(idx, _)| {
+        let after = &tpl[idx + 2..];
+        !after.trim_start().starts_with('$')
+    });
+    if !has_var_ref {
+        return Err(AuthError::DynVarOnlyInSecretField {
+            template: tpl.into(),
+        });
+    }
+    Ok(())
+}
+
+/// Reject in two cases for a secret-only auth field:
+/// 1. Template references *only* dyn-vars (`{{$...}}`) and no env var — value re-rolls
+///    per request → broken auth.
+/// 2. Template references env var(s) but none flagged secret → secret leaked through
+///    SecretRegistry-less interpolation.
+fn require_secret(tpl: &str, i: &Interpolated) -> Result<(), AuthError> {
+    if !tpl.contains("{{") {
+        return Ok(()); // plain literal — caller's responsibility
+    }
+    let has_var_ref = tpl.match_indices("{{").any(|(idx, _)| {
+        let after = &tpl[idx + 2..];
+        !after.trim_start().starts_with('$')
+    });
+    if !has_var_ref {
+        return Err(AuthError::DynVarOnlyInSecretField {
+            template: tpl.into(),
+        });
+    }
+    if i.used_secrets.is_empty() && i.value != *tpl {
+        return Err(AuthError::NotSecret(tpl.into()));
+    }
+    Ok(())
 }

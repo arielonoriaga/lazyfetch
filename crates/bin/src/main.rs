@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 mod config;
 mod import;
+mod import_curl;
 mod run;
 
 pub use config::resolve as resolve_config_dir;
@@ -23,6 +24,8 @@ enum Cmd {
     Run(run::RunArgs),
     /// Import a Postman v2.1 collection
     ImportPostman(import::ImportArgs),
+    /// Import a cURL command (positional / file / stdin) into a Request
+    ImportCurl(import_curl::ImportCurlArgs),
 }
 
 #[tokio::main]
@@ -34,6 +37,7 @@ async fn main() -> anyhow::Result<()> {
     match cli.cmd {
         Some(Cmd::Run(a)) => run::run(a).await,
         Some(Cmd::ImportPostman(a)) => import::run(a),
+        Some(Cmd::ImportCurl(a)) => import_curl::run(a),
         None => {
             let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
             let cfg = resolve_config_dir(cli.config_dir, &cwd);

@@ -25,6 +25,8 @@ ulid              = { workspace = true }
 http              = { workspace = true }
 tokio             = { workspace = true }
 serde_json        = { workspace = true }
+tui-textarea      = { version = "0.6", default-features = false, features = ["crossterm","ratatui"] }
+tempfile          = "3"
 
 [dev-dependencies]
 insta = "1"

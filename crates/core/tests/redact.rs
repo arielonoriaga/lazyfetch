@@ -14,6 +14,7 @@ fn redacts_header_and_body() {
         timeout: std::time::Duration::from_secs(30),
         follow_redirects: true,
         max_redirects: 10,
+        multipart: None,
     };
     let r = redact_wire(&w, &reg);
     assert_eq!(r.headers[0].1, "Bearer ***");

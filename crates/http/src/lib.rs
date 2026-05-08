@@ -1,7 +1,7 @@
 //! lazyfetch-http
 
 use async_trait::async_trait;
-use lazyfetch_core::exec::{HttpSender, SendError, WireRequest, WireResponse};
+use lazyfetch_core::exec::{HttpSender, MultipartKind, SendError, WireRequest, WireResponse};
 use std::time::Instant;
 
 #[derive(Default)]
@@ -34,7 +34,34 @@ impl HttpSender for ReqwestSender {
         for (k, v) in &r.headers {
             rb = rb.header(k, v);
         }
-        if !r.body_bytes.is_empty() {
+        if let Some(parts) = r.multipart.as_ref() {
+            let mut form = reqwest::multipart::Form::new();
+            for f in parts {
+                form = match &f.kind {
+                    MultipartKind::Text(s) => form.part(
+                        f.name.clone(),
+                        reqwest::multipart::Part::text(s.clone()),
+                    ),
+                    MultipartKind::File(path) => {
+                        let mime = mime_guess::from_path(path)
+                            .first_or_octet_stream()
+                            .essence_str()
+                            .to_string();
+                        let part = reqwest::multipart::Part::file(path)
+                            .await
+                            .map_err(|e| SendError::Other(anyhow::anyhow!(e)))?
+                            .mime_str(&mime)
+                            .map_err(|e| SendError::Other(anyhow::anyhow!(e)))?;
+                        let part = match &f.filename {
+                            Some(n) => part.file_name(n.clone()),
+                            None => part,
+                        };
+                        form.part(f.name.clone(), part)
+                    }
+                };
+            }
+            rb = rb.multipart(form);
+        } else if !r.body_bytes.is_empty() {
             rb = rb.body(r.body_bytes.clone());
         }
         let started = Instant::now();

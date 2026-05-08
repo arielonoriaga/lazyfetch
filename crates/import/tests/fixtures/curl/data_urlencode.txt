@@ -1,0 +1,4 @@
+curl 'https://api.test/login' \
+  --data-urlencode 'user=alice' \
+  --data-urlencode 'pass=hunter 2' \
+  -H 'Content-Type: application/x-www-form-urlencoded'

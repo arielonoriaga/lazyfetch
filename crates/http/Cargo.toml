@@ -19,7 +19,9 @@ async-trait    = "0.1"
 tokio          = { workspace = true }
 http           = { workspace = true }
 anyhow         = { workspace = true }
+mime_guess     = "2"
 
 [dev-dependencies]
-wiremock = "0.6"
-tokio    = { workspace = true, features = ["macros","rt"] }
+wiremock   = "0.6"
+tokio      = { workspace = true, features = ["macros","rt"] }
+serde_json = { workspace = true }

@@ -74,6 +74,36 @@ pub enum Body {
     Form(Vec<KV>),
     Multipart(Vec<Part>),
     File(PathBuf),
+    #[serde(rename = "graphql")]
+    GraphQL {
+        query: String,
+        variables: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BodyKind {
+    None,
+    Raw,
+    Json,
+    Form,
+    Multipart,
+    File,
+    GraphQL,
+}
+
+impl Body {
+    pub fn kind(&self) -> BodyKind {
+        match self {
+            Body::None => BodyKind::None,
+            Body::Raw { .. } => BodyKind::Raw,
+            Body::Json(_) => BodyKind::Json,
+            Body::Form(_) => BodyKind::Form,
+            Body::Multipart(_) => BodyKind::Multipart,
+            Body::File(_) => BodyKind::File,
+            Body::GraphQL { .. } => BodyKind::GraphQL,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

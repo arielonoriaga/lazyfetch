@@ -2,6 +2,7 @@
 
 pub mod auth;
 pub mod catalog;
+pub mod dynvars;
 pub mod env;
 pub mod error;
 pub mod exec;
