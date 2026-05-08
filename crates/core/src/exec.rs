@@ -49,6 +49,9 @@ pub enum SendError {
 
 #[derive(Debug, Clone)]
 pub struct Executed {
+    /// Pre-interpolation Request (with `{{var}}` placeholders intact). Used by
+    /// repeat-last (`R`): replays against the current env so dyn-vars re-roll.
+    pub request_template: Request,
     pub request_snapshot: WireRequest,
     pub response: WireResponse,
     pub at: DateTime<Utc>,
@@ -125,6 +128,7 @@ pub async fn execute(
     }
     let resp = http.send(wire.clone()).await?;
     Ok(Executed {
+        request_template: req.clone(),
         request_snapshot: redact_wire(&wire, &reg),
         response: resp,
         at: clock.now(),
