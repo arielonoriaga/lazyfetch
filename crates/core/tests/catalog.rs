@@ -3,7 +3,7 @@ use lazyfetch_core::catalog::{Body, BodyKind};
 #[test]
 fn body_kind_round_trip() {
     assert_eq!(Body::None.kind(), BodyKind::None);
-    assert_eq!(Body::Json("{}".into()).kind(), BodyKind::Json);
+    assert_eq!(Body::Json { text: "{}".into() }.kind(), BodyKind::Json);
     assert_eq!(
         Body::GraphQL {
             query: "{ me { id } }".into(),

@@ -30,7 +30,7 @@ fn parses_basic_collection() {
         Item::Request(r) => r,
         _ => panic!(),
     };
-    assert!(matches!(create.body, Body::Json(_)));
+    assert!(matches!(create.body, Body::Json { .. }));
 
     let ping = match &coll.root.items[1] {
         Item::Request(r) => r,

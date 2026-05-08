@@ -70,7 +70,9 @@ pub enum Body {
         mime: String,
         text: String,
     },
-    Json(String),
+    Json {
+        text: String,
+    },
     Form(Vec<KV>),
     Multipart(Vec<Part>),
     File(PathBuf),
@@ -97,7 +99,7 @@ impl Body {
         match self {
             Body::None => BodyKind::None,
             Body::Raw { .. } => BodyKind::Raw,
-            Body::Json(_) => BodyKind::Json,
+            Body::Json { .. } => BodyKind::Json,
             Body::Form(_) => BodyKind::Form,
             Body::Multipart(_) => BodyKind::Multipart,
             Body::File(_) => BodyKind::File,
