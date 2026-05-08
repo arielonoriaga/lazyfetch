@@ -1,7 +1,8 @@
-use crate::app::{AppState, Dir, Focus, InsertBuf, InsertField, Mode};
+use crate::app::{AppState, Dir, Focus, Mode};
 use crate::commands::{run_command, run_move, run_rename, run_save};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+mod env;
 mod request;
 mod response;
 mod url;
@@ -403,6 +404,9 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
     if let Some(dirty) = response::apply_action(state, &action) {
         return dirty;
     }
+    if let Some(dirty) = env::apply_action(state, &action) {
+        return dirty;
+    }
     match action {
         Action::Quit => {
             state.should_quit = true;
@@ -424,54 +428,14 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
             state.focus = f;
             EnvDirty::No
         }
-        Action::EnvCursorUp => {
-            if state.env_cursor > 0 {
-                state.env_cursor -= 1;
-            }
-            EnvDirty::No
-        }
-        Action::EnvCursorDown => {
-            let max = state.active_env_ref().map(|e| e.vars.len()).unwrap_or(0);
-            if max > 0 && state.env_cursor + 1 < max {
-                state.env_cursor += 1;
-            }
-            EnvDirty::No
-        }
-        Action::EnvAdd { secret } => {
-            state.mode = Mode::Insert;
-            state.insert_buf = Some(InsertBuf::new(secret));
-            EnvDirty::No
-        }
-        Action::EnvEdit => {
-            let cur = state.env_cursor;
-            if let Some((k, v, secret)) = state.env_var_at(cur) {
-                let key = k.clone();
-                let value = v.to_string();
-                state.mode = Mode::Insert;
-                state.insert_buf = Some(InsertBuf::editing(cur, key, value, secret));
-            } else {
-                state.notify("nothing to edit".to_string());
-            }
-            EnvDirty::No
-        }
-        Action::EnvToggleReveal => {
-            state.toggle_reveal();
-            EnvDirty::No
-        }
-        Action::EnvDelete => {
-            if state.delete_var() {
-                EnvDirty::Yes
-            } else {
-                EnvDirty::No
-            }
-        }
-        Action::EnvToggleSecret => {
-            if state.toggle_secret() {
-                EnvDirty::Yes
-            } else {
-                EnvDirty::No
-            }
-        }
+        // Env actions handled by `env::apply_action` early-exit above.
+        Action::EnvCursorUp
+        | Action::EnvCursorDown
+        | Action::EnvAdd { .. }
+        | Action::EnvEdit
+        | Action::EnvToggleReveal
+        | Action::EnvDelete
+        | Action::EnvToggleSecret => EnvDirty::No,
         Action::EnterCommand => {
             state.mode = Mode::Command;
             state.command_buf.clear();
@@ -495,60 +459,12 @@ pub fn apply(state: &mut AppState, action: Action) -> EnvDirty {
             state.mode = Mode::Normal;
             run_command(state, &cmd)
         }
-        Action::InsertChar(c) => {
-            if let Some(buf) = state.insert_buf.as_mut() {
-                match buf.field {
-                    InsertField::Key => buf.key.push(c),
-                    InsertField::Value => buf.value.push(c),
-                }
-            }
-            EnvDirty::No
-        }
-        Action::InsertBackspace => {
-            if let Some(buf) = state.insert_buf.as_mut() {
-                match buf.field {
-                    InsertField::Key => buf.key.pop(),
-                    InsertField::Value => buf.value.pop(),
-                };
-            }
-            EnvDirty::No
-        }
-        Action::InsertNextField => {
-            if let Some(buf) = state.insert_buf.as_mut() {
-                buf.field = match buf.field {
-                    InsertField::Key => InsertField::Value,
-                    InsertField::Value => InsertField::Key,
-                };
-            }
-            EnvDirty::No
-        }
-        Action::InsertCancel => {
-            state.mode = Mode::Normal;
-            state.insert_buf = None;
-            EnvDirty::No
-        }
-        Action::InsertSubmit => {
-            if let Some(buf) = state.insert_buf.take() {
-                state.mode = Mode::Normal;
-                if buf.key.is_empty() {
-                    return EnvDirty::No;
-                }
-                match buf.edit_idx {
-                    Some(i) => {
-                        if state.replace_var(i, buf.key, buf.value, buf.secret) {
-                            return EnvDirty::Yes;
-                        }
-                    }
-                    None => {
-                        state.add_var(buf.key, buf.value, buf.secret);
-                        return EnvDirty::Yes;
-                    }
-                }
-            } else {
-                state.mode = Mode::Normal;
-            }
-            EnvDirty::No
-        }
+        // Insert popup (env editor) actions handled by `env::apply_action` above.
+        Action::InsertChar(_)
+        | Action::InsertBackspace
+        | Action::InsertNextField
+        | Action::InsertCancel
+        | Action::InsertSubmit => EnvDirty::No,
         Action::ToggleHelp => {
             state.help_open = !state.help_open;
             EnvDirty::No
