@@ -1177,7 +1177,9 @@ dependencies = [
  "async-trait",
  "http",
  "lazyfetch-core",
+ "mime_guess",
  "reqwest",
+ "serde_json",
  "tokio",
  "wiremock",
 ]

@@ -1,12 +1,29 @@
 use crate::auth::{AuthCache, AuthError, AuthResolver, AuthSpec};
-use crate::catalog::{Body, Request};
+use crate::catalog::{Body, PartContent, Request};
 use crate::env::ResolveCtx;
 use crate::error::CoreError;
 use crate::ports::Clock;
 use crate::secret::SecretRegistry;
 use chrono::{DateTime, Utc};
 use http::Method;
+use std::path::PathBuf;
 use std::time::Duration;
+
+/// One field of a multipart/form-data body. Lives on `WireRequest` as a sidecar so the
+/// reqwest adapter can build a `multipart::Form` (which owns the boundary + chunked
+/// streaming for files). `body_bytes` is empty when `multipart` is set.
+#[derive(Debug, Clone)]
+pub struct MultipartField {
+    pub name: String,
+    pub kind: MultipartKind,
+    pub filename: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub enum MultipartKind {
+    Text(String),
+    File(PathBuf),
+}
 
 #[derive(Debug, Clone)]
 pub struct WireRequest {
@@ -14,6 +31,9 @@ pub struct WireRequest {
     pub url: String,
     pub headers: Vec<(String, String)>,
     pub body_bytes: Vec<u8>,
+    /// When `Some`, the adapter sends a multipart/form-data body instead of raw bytes.
+    /// Mutually exclusive with non-empty `body_bytes`.
+    pub multipart: Option<Vec<MultipartField>>,
     pub timeout: Duration,
     pub follow_redirects: bool,
     pub max_redirects: u8,
@@ -110,11 +130,17 @@ pub async fn execute(
     }
     let body_bytes = render_body(&req.body, ctx, &mut reg)?;
     let url = apply_query(&url_i.value, &req.query, ctx, &mut reg)?;
+    let multipart = if let Body::Multipart(parts) = &req.body {
+        Some(render_multipart(parts, ctx, &mut reg)?)
+    } else {
+        None
+    };
     let mut wire = WireRequest {
         method: req.method.clone(),
         url,
         headers,
         body_bytes,
+        multipart,
         timeout: Duration::from_millis(req.timeout_ms.unwrap_or(30_000) as u64),
         follow_redirects: req.follow_redirects,
         max_redirects: req.max_redirects,
@@ -175,6 +201,30 @@ fn render_body(b: &Body, ctx: &ResolveCtx, reg: &mut SecretRegistry) -> Result<V
             serde_json::to_vec(&body).map_err(|e| CoreError::InvalidTemplate(e.to_string()))?
         }
     })
+}
+
+fn render_multipart(
+    parts: &[crate::catalog::Part],
+    ctx: &ResolveCtx,
+    reg: &mut SecretRegistry,
+) -> Result<Vec<MultipartField>, CoreError> {
+    let mut out = Vec::with_capacity(parts.len());
+    for p in parts {
+        let kind = match &p.content {
+            PartContent::Text(t) => {
+                let i = crate::env::interpolate(t, ctx)?;
+                reg.extend(&i.used_secrets);
+                MultipartKind::Text(i.value)
+            }
+            PartContent::File(path) => MultipartKind::File(path.clone()),
+        };
+        out.push(MultipartField {
+            name: p.name.clone(),
+            kind,
+            filename: p.filename.clone(),
+        });
+    }
+    Ok(out)
 }
 
 fn apply_query(

@@ -11,6 +11,7 @@ fn req(method: Method, url: &str) -> WireRequest {
         timeout: std::time::Duration::from_secs(30),
         follow_redirects: true,
         max_redirects: 10,
+        multipart: None,
     }
 }
 

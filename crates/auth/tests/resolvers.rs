@@ -17,6 +17,7 @@ fn empty_req() -> WireRequest {
         timeout: std::time::Duration::from_secs(5),
         follow_redirects: true,
         max_redirects: 10,
+        multipart: None,
     }
 }
 
