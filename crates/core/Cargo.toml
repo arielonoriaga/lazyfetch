@@ -27,11 +27,10 @@ tracing     = { workspace = true }
 uuid        = { version = "1", features = ["v4"] }
 rand        = "0.8"
 base64      = "0.22"
+serde_json  = { workspace = true }
 
 [dev-dependencies]
-base64     = "0.22"
 proptest   = "1"
-serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 tokio      = { workspace = true, features = ["macros", "rt"] }
 uuid       = { version = "1", features = ["v4"] }

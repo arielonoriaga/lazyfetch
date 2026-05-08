@@ -155,6 +155,21 @@ fn render_body(b: &Body, ctx: &ResolveCtx, reg: &mut SecretRegistry) -> Result<V
             s.into_bytes()
         }
         Body::Multipart(_) | Body::File(_) => Vec::new(),
+        Body::GraphQL { query, variables } => {
+            let q = crate::env::interpolate(query, ctx)?;
+            reg.extend(&q.used_secrets);
+            let vars_value: serde_json::Value = if variables.trim().is_empty() {
+                serde_json::Value::Object(Default::default())
+            } else {
+                let v = crate::env::interpolate(variables, ctx)?;
+                reg.extend(&v.used_secrets);
+                serde_json::from_str(&v.value).map_err(|e| {
+                    CoreError::InvalidTemplate(format!("graphql variables: {e}"))
+                })?
+            };
+            let body = serde_json::json!({ "query": q.value, "variables": vars_value });
+            serde_json::to_vec(&body).map_err(|e| CoreError::InvalidTemplate(e.to_string()))?
+        }
     })
 }
 
