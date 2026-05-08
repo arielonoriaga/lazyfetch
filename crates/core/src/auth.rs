@@ -116,6 +116,8 @@ pub enum AuthError {
     NotSecret(String),
     #[error("oauth: {0}")]
     OAuth(String),
+    #[error("dyn-var-only template in secret field: {template} — auth that re-rolls per request is broken")]
+    DynVarOnlyInSecretField { template: String },
     #[error(transparent)]
     Core(#[from] crate::error::CoreError),
 }
