@@ -25,7 +25,8 @@ fn simple_get() {
 #[test]
 fn post_with_header_and_body() {
     let mut r = req(Method::POST, "https://api/x");
-    r.headers.push(("Content-Type".into(), "application/json".into()));
+    r.headers
+        .push(("Content-Type".into(), "application/json".into()));
     r.body_bytes = b"{\"a\":1}".to_vec();
     let s = build_curl(&r, &SecretRegistry::new());
     assert!(s.contains("-X POST"));
@@ -38,7 +39,8 @@ fn redacts_secrets_in_headers() {
     let mut reg = SecretRegistry::new();
     reg.insert("hunter2");
     let mut r = req(Method::GET, "https://api/x");
-    r.headers.push(("Authorization".into(), "Bearer hunter2".into()));
+    r.headers
+        .push(("Authorization".into(), "Bearer hunter2".into()));
     let s = build_curl(&r, &reg);
     assert!(s.contains("Bearer ***"));
     assert!(!s.contains("hunter2"));

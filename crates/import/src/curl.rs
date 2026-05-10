@@ -3,7 +3,7 @@
 
 use lazyfetch_core::auth::AuthSpec;
 use lazyfetch_core::catalog::{Body, Request};
-use lazyfetch_core::primitives::{KV, Template, UrlTemplate};
+use lazyfetch_core::primitives::{Template, UrlTemplate, KV};
 use thiserror::Error;
 use ulid::Ulid;
 
@@ -212,12 +212,13 @@ fn assemble(mut tokens: Vec<String>) -> Result<(Request, ImportReport), CurlErro
         match t.as_str() {
             "-X" | "--request" => {
                 let v = need_val(&mut it, &t)?;
-                method = Some(
-                    http::Method::from_bytes(v.as_bytes()).map_err(|e| CurlError::Flag {
-                        which: t.clone(),
-                        msg: format!("{e}"),
-                    })?,
-                );
+                method =
+                    Some(
+                        http::Method::from_bytes(v.as_bytes()).map_err(|e| CurlError::Flag {
+                            which: t.clone(),
+                            msg: format!("{e}"),
+                        })?,
+                    );
             }
             "-H" | "--header" => {
                 let v = need_val(&mut it, &t)?;
@@ -331,7 +332,9 @@ fn assemble(mut tokens: Vec<String>) -> Result<(Request, ImportReport), CurlErro
                 if url.is_none() {
                     url = Some(t);
                 } else {
-                    report.warnings.push(format!("extra positional ignored: {t}"));
+                    report
+                        .warnings
+                        .push(format!("extra positional ignored: {t}"));
                 }
             }
         }
@@ -374,7 +377,11 @@ fn assemble(mut tokens: Vec<String>) -> Result<(Request, ImportReport), CurlErro
             combined.push(if kv.key.is_empty() {
                 kv.value.clone()
             } else {
-                format!("{}={}", urlencoding::encode(&kv.key), urlencoding::encode(&kv.value))
+                format!(
+                    "{}={}",
+                    urlencoding::encode(&kv.key),
+                    urlencoding::encode(&kv.value)
+                )
             });
         }
         if !combined.is_empty() {

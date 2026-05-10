@@ -7,9 +7,7 @@
 //! reqwest stack.
 
 use async_trait::async_trait;
-use lazyfetch_core::auth::{
-    AuthCache, AuthError, AuthResolver, AuthSpec, Token, TokenKey,
-};
+use lazyfetch_core::auth::{AuthCache, AuthError, AuthResolver, AuthSpec, Token, TokenKey};
 use lazyfetch_core::env::ResolveCtx;
 use lazyfetch_core::exec::{HttpSender, SendError, WireRequest, WireResponse};
 use lazyfetch_core::ports::{Clock, SystemClock};

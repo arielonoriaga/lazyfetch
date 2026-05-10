@@ -61,7 +61,9 @@ fn parses_multipart_file() {
     assert_eq!(parts[0].name, "meta");
     assert!(matches!(&parts[0].content, PartContent::Text(t) if t == "hello"));
     assert_eq!(parts[1].name, "avatar");
-    assert!(matches!(&parts[1].content, PartContent::File(p) if p.to_str() == Some("/tmp/pic.png")));
+    assert!(
+        matches!(&parts[1].content, PartContent::File(p) if p.to_str() == Some("/tmp/pic.png"))
+    );
 }
 
 #[test]
@@ -73,7 +75,9 @@ fn parses_data_urlencode() {
         _ => panic!("expected form, got {:?}", req.body),
     };
     assert!(rows.iter().any(|r| r.key == "user" && r.value == "alice"));
-    assert!(rows.iter().any(|r| r.key == "pass" && r.value == "hunter 2"));
+    assert!(rows
+        .iter()
+        .any(|r| r.key == "pass" && r.value == "hunter 2"));
 }
 
 #[test]

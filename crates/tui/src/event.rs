@@ -115,10 +115,7 @@ pub fn run(mut state: AppState, rt: Handle) -> anyhow::Result<()> {
                                     state.req_body_kind,
                                     &result.text,
                                 );
-                                state.notify(format!(
-                                    "body updated ({} chars)",
-                                    result.text.len()
-                                ));
+                                state.notify(format!("body updated ({} chars)", result.text.len()));
                             }
                             Err(e) => state.notify(format!("editor failed: {e}")),
                         }

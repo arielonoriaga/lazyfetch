@@ -65,7 +65,9 @@ fn interp_inner(
     depth: u8,
 ) -> Result<Interpolated, CoreError> {
     if depth > MAX_DEPTH {
-        return Err(CoreError::InvalidTemplate(format!("dyn-var depth >{MAX_DEPTH}")));
+        return Err(CoreError::InvalidTemplate(format!(
+            "dyn-var depth >{MAX_DEPTH}"
+        )));
     }
     let mut out = String::with_capacity(s.len());
     let mut reg = SecretRegistry::new();
@@ -79,7 +81,10 @@ fn interp_inner(
         reg.extend(&secrets);
     }
     out.push_str(rest);
-    Ok(Interpolated { value: out, used_secrets: reg })
+    Ok(Interpolated {
+        value: out,
+        used_secrets: reg,
+    })
 }
 
 /// Split off everything up to the matching `}}`. Returns (inner, after).
@@ -120,7 +125,9 @@ fn resolve_token(
     let v = lookup(trimmed, ctx).ok_or_else(|| CoreError::MissingVar(trimmed.into()))?;
     let val = secrecy::ExposeSecret::expose_secret(&v.value).clone();
     let mut reg = SecretRegistry::new();
-    if v.secret { reg.insert(val.clone()); }
+    if v.secret {
+        reg.insert(val.clone());
+    }
     Ok((val, reg))
 }
 
@@ -130,9 +137,8 @@ fn resolve_dyn(
     dyn_ctx: &DynCtx,
     depth: u8,
 ) -> Result<(String, SecretRegistry), CoreError> {
-    let (name, raw_args) = parse_name_args(spec).map_err(|m| {
-        CoreError::InvalidTemplate(format!("dyn-var ${spec}: {m}"))
-    })?;
+    let (name, raw_args) = parse_name_args(spec)
+        .map_err(|m| CoreError::InvalidTemplate(format!("dyn-var ${spec}: {m}")))?;
     let mut combined = SecretRegistry::new();
     let mut resolved: Vec<Arg> = Vec::with_capacity(raw_args.len());
     for raw in &raw_args {
@@ -171,9 +177,9 @@ fn parse_name_args(spec: &str) -> Result<(&str, Vec<RawArg>), String> {
     if after.is_empty() {
         return Ok((name, vec![]));
     }
-    let after = after.strip_prefix('(').ok_or_else(|| {
-        format!("expected '(' after ${name}, got '{after}'")
-    })?;
+    let after = after
+        .strip_prefix('(')
+        .ok_or_else(|| format!("expected '(' after ${name}, got '{after}'"))?;
     let after = after.strip_suffix(')').ok_or("missing closing ')'")?;
     let args = if after.trim().is_empty() {
         vec![]
@@ -188,7 +194,11 @@ fn split_args(s: &str) -> Result<Vec<RawArg>, String> {
     let mut chars = s.chars().peekable();
     loop {
         while let Some(&c) = chars.peek() {
-            if c.is_whitespace() { chars.next(); } else { break; }
+            if c.is_whitespace() {
+                chars.next();
+            } else {
+                break;
+            }
         }
         let Some(&first) = chars.peek() else { break };
         let arg = if first == '\'' || first == '"' {
@@ -200,11 +210,17 @@ fn split_args(s: &str) -> Result<Vec<RawArg>, String> {
         };
         out.push(arg);
         while let Some(&c) = chars.peek() {
-            if c.is_whitespace() { chars.next(); } else { break; }
+            if c.is_whitespace() {
+                chars.next();
+            } else {
+                break;
+            }
         }
         match chars.peek() {
             None => break,
-            Some(&',') => { chars.next(); }
+            Some(&',') => {
+                chars.next();
+            }
             Some(&c) => return Err(format!("unexpected char '{c}' between args")),
         }
     }
@@ -218,7 +234,9 @@ fn parse_quoted(
     chars.next();
     let mut out = String::new();
     while let Some(c) = chars.next() {
-        if c == quote { return Ok(RawArg::Quoted(out)); }
+        if c == quote {
+            return Ok(RawArg::Quoted(out));
+        }
         if c == '\\' {
             match chars.next() {
                 Some('n') => out.push('\n'),
@@ -236,9 +254,7 @@ fn parse_quoted(
     Err(format!("unterminated {quote}-quoted string"))
 }
 
-fn parse_var_ref(
-    chars: &mut std::iter::Peekable<std::str::Chars>,
-) -> Result<RawArg, String> {
+fn parse_var_ref(chars: &mut std::iter::Peekable<std::str::Chars>) -> Result<RawArg, String> {
     let &c1 = chars.peek().ok_or("expected '{{'")?;
     chars.next();
     let c2 = chars.next().ok_or("expected second '{'")?;
@@ -250,7 +266,9 @@ fn parse_var_ref(
         match chars.next() {
             Some('}') => {
                 let close2 = chars.next().ok_or("expected closing '}}'")?;
-                if close2 != '}' { return Err("expected '}}'".into()); }
+                if close2 != '}' {
+                    return Err("expected '}}'".into());
+                }
                 return Ok(RawArg::VarRef(name));
             }
             Some(c) => name.push(c),
@@ -259,9 +277,7 @@ fn parse_var_ref(
     }
 }
 
-fn parse_bareword(
-    chars: &mut std::iter::Peekable<std::str::Chars>,
-) -> Result<RawArg, String> {
+fn parse_bareword(chars: &mut std::iter::Peekable<std::str::Chars>) -> Result<RawArg, String> {
     let mut out = String::new();
     while let Some(&c) = chars.peek() {
         if matches!(c, ',' | '(' | ')' | '{' | '}' | '\'' | '"') || c.is_whitespace() {
@@ -283,18 +299,19 @@ fn resolve_arg(
     depth: u8,
 ) -> Result<(String, SecretRegistry), CoreError> {
     if depth > MAX_DEPTH {
-        return Err(CoreError::InvalidTemplate(format!("dyn-var depth >{MAX_DEPTH}")));
+        return Err(CoreError::InvalidTemplate(format!(
+            "dyn-var depth >{MAX_DEPTH}"
+        )));
     }
     match raw {
-        RawArg::Quoted(s) | RawArg::Bareword(s) => {
-            Ok((s.clone(), SecretRegistry::new()))
-        }
+        RawArg::Quoted(s) | RawArg::Bareword(s) => Ok((s.clone(), SecretRegistry::new())),
         RawArg::VarRef(name) => {
-            let v = lookup(name, ctx)
-                .ok_or_else(|| CoreError::MissingVar(name.clone()))?;
+            let v = lookup(name, ctx).ok_or_else(|| CoreError::MissingVar(name.clone()))?;
             let val = secrecy::ExposeSecret::expose_secret(&v.value).clone();
             let mut reg = SecretRegistry::new();
-            if v.secret { reg.insert(val.clone()); }
+            if v.secret {
+                reg.insert(val.clone());
+            }
             // Only further-recurse if the resolved value itself contains a dyn-var token.
             if val.contains("{{$") {
                 let nested = interp_inner(&val, ctx, dyn_ctx, depth + 1)?;

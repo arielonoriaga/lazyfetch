@@ -46,7 +46,10 @@ async fn bearer_dynvar_only_is_rejected() {
             &mut reg,
         )
         .await;
-    assert!(matches!(res, Err(AuthError::DynVarOnlyInSecretField { .. })));
+    assert!(matches!(
+        res,
+        Err(AuthError::DynVarOnlyInSecretField { .. })
+    ));
 }
 
 #[tokio::test]

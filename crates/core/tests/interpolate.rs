@@ -94,8 +94,14 @@ use lazyfetch_core::ports::SystemClock;
 #[test]
 fn interpolate_resolves_now() {
     let env = ev(&[]);
-    let ctx = ResolveCtx { env: &env, collection_vars: &[], overrides: &[] };
-    let dyn_ctx = dynvars::DynCtx { clock: &SystemClock };
+    let ctx = ResolveCtx {
+        env: &env,
+        collection_vars: &[],
+        overrides: &[],
+    };
+    let dyn_ctx = dynvars::DynCtx {
+        clock: &SystemClock,
+    };
     let out = interpolate_with_dyn("Sent at {{$now}}", &ctx, &dyn_ctx).unwrap();
     assert!(out.value.starts_with("Sent at "));
     assert!(chrono::DateTime::parse_from_rfc3339(&out.value["Sent at ".len()..]).is_ok());
@@ -105,13 +111,17 @@ fn interpolate_resolves_now() {
 #[test]
 fn interpolate_taints_base64_of_secret() {
     let env = ev(&[("TOKEN", "hunter2", true)]);
-    let ctx = ResolveCtx { env: &env, collection_vars: &[], overrides: &[] };
-    let dyn_ctx = dynvars::DynCtx { clock: &SystemClock };
+    let ctx = ResolveCtx {
+        env: &env,
+        collection_vars: &[],
+        overrides: &[],
+    };
+    let dyn_ctx = dynvars::DynCtx {
+        clock: &SystemClock,
+    };
     let out = interpolate_with_dyn("Auth: {{$base64({{TOKEN}})}}", &ctx, &dyn_ctx).unwrap();
-    let expected_b64 = base64::Engine::encode(
-        &base64::engine::general_purpose::STANDARD,
-        b"hunter2",
-    );
+    let expected_b64 =
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"hunter2");
     assert!(out.value.contains(&expected_b64));
     assert!(out.used_secrets.contains("hunter2"));
     assert!(out.used_secrets.contains(&expected_b64));
@@ -120,8 +130,14 @@ fn interpolate_taints_base64_of_secret() {
 #[test]
 fn unknown_dyn_var_falls_through_to_missing() {
     let env = ev(&[]);
-    let ctx = ResolveCtx { env: &env, collection_vars: &[], overrides: &[] };
-    let dyn_ctx = dynvars::DynCtx { clock: &SystemClock };
+    let ctx = ResolveCtx {
+        env: &env,
+        collection_vars: &[],
+        overrides: &[],
+    };
+    let dyn_ctx = dynvars::DynCtx {
+        clock: &SystemClock,
+    };
     let r = interpolate_with_dyn("{{$nope}}", &ctx, &dyn_ctx);
     assert!(r.is_err());
 }
@@ -129,8 +145,14 @@ fn unknown_dyn_var_falls_through_to_missing() {
 #[test]
 fn nested_dyn_var_recursion_capped_at_8() {
     let env = ev(&[]);
-    let ctx = ResolveCtx { env: &env, collection_vars: &[], overrides: &[] };
-    let dyn_ctx = dynvars::DynCtx { clock: &SystemClock };
+    let ctx = ResolveCtx {
+        env: &env,
+        collection_vars: &[],
+        overrides: &[],
+    };
+    let dyn_ctx = dynvars::DynCtx {
+        clock: &SystemClock,
+    };
     let mut s = String::from("'x'");
     for _ in 0..10 {
         s = format!("{{{{$base64({s})}}}}");

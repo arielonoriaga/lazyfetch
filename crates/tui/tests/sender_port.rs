@@ -46,12 +46,10 @@ async fn injected_sender_handles_dispatch() {
     let rx = sender::dispatch(&state, rt);
 
     // Block until the spawned task completes — recv blocks max 2s in case of regression.
-    let result = tokio::task::spawn_blocking(move || {
-        rx.recv_timeout(Duration::from_secs(2))
-    })
-    .await
-    .unwrap()
-    .expect("send result");
+    let result = tokio::task::spawn_blocking(move || rx.recv_timeout(Duration::from_secs(2)))
+        .await
+        .unwrap()
+        .expect("send result");
     let executed = result.expect("execute Ok");
 
     assert_eq!(executed.response.status, 204);

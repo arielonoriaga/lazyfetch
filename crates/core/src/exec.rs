@@ -206,9 +206,8 @@ fn render_body(b: &Body, rc: &mut RenderCtx) -> Result<Vec<u8>, CoreError> {
                 serde_json::Value::Object(Default::default())
             } else {
                 let v = rc.interp(variables)?;
-                serde_json::from_str(&v).map_err(|e| {
-                    CoreError::InvalidTemplate(format!("graphql variables: {e}"))
-                })?
+                serde_json::from_str(&v)
+                    .map_err(|e| CoreError::InvalidTemplate(format!("graphql variables: {e}")))?
             };
             let body = serde_json::json!({ "query": q, "variables": vars_value });
             serde_json::to_vec(&body).map_err(|e| CoreError::InvalidTemplate(e.to_string()))?

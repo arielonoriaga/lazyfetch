@@ -38,10 +38,9 @@ impl HttpSender for ReqwestSender {
             let mut form = reqwest::multipart::Form::new();
             for f in parts {
                 form = match &f.kind {
-                    MultipartKind::Text(s) => form.part(
-                        f.name.clone(),
-                        reqwest::multipart::Part::text(s.clone()),
-                    ),
+                    MultipartKind::Text(s) => {
+                        form.part(f.name.clone(), reqwest::multipart::Part::text(s.clone()))
+                    }
                     MultipartKind::File(path) => {
                         let mime = mime_guess::from_path(path)
                             .first_or_octet_stream()

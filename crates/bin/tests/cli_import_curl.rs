@@ -19,7 +19,12 @@ fn import_curl_positional_prints_summary() {
         .args(["import-curl", "curl https://api.test/x"])
         .output()
         .expect("spawn");
-    assert!(out.status.success(), "exit: {:?}\n{}", out.status, String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "exit: {:?}\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         stdout.contains("imported GET https://api.test/x"),
@@ -42,7 +47,12 @@ fn import_curl_save_writes_yaml_into_collection() {
         ])
         .output()
         .expect("spawn");
-    assert!(out.status.success(), "exit: {:?}\n{}", out.status, String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "exit: {:?}\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr)
+    );
     let yaml_path = cfg
         .path()
         .join("collections")
@@ -64,8 +74,5 @@ fn import_curl_unknown_flag_emits_warning() {
         .expect("spawn");
     assert!(out.status.success());
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("unknown flag"),
-        "stderr: {stderr}"
-    );
+    assert!(stderr.contains("unknown flag"), "stderr: {stderr}");
 }

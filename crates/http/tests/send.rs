@@ -45,8 +45,7 @@ async fn sends_graphql_json_body() {
         .mount(&server)
         .await;
 
-    let body =
-        br#"{"query":"query { me { id } }","variables":{"x":1}}"#.to_vec();
+    let body = br#"{"query":"query { me { id } }","variables":{"x":1}}"#.to_vec();
     let req = WireRequest {
         method: http::Method::POST,
         url: format!("{}/gql", server.uri()),

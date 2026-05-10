@@ -91,7 +91,10 @@ pub fn draw(f: &mut Frame, state: &AppState) -> DrawInfo {
         Mode::SaveAs => format!("Save as: {}", state.save_buf),
         Mode::Rename => format!("Rename to: {}", state.rename_buf),
         Mode::Move => format!("Move {} → {}", state.marked_requests.len(), state.move_buf),
-        Mode::ImportCurl => format!("Import cURL ({} chars) — Esc cancel", state.import_curl_buf.len()),
+        Mode::ImportCurl => format!(
+            "Import cURL ({} chars) — Esc cancel",
+            state.import_curl_buf.len()
+        ),
         Mode::Normal => match state.focus {
             Focus::Env => {
                 "Env: j/k · a add · A add-sec · e edit · d del · m sec · r reveal · :env / :newenv"
