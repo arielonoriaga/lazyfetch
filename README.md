@@ -3,7 +3,7 @@
 # lazyfetch
 
 <a href="https://github.com/arielonoriaga/lazyfetch">
-  <img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=600&size=18&duration=3500&pause=1200&color=58A6FF&center=true&vCenter=true&width=620&lines=Postman+in+your+terminal.;Vim+keys.+No+Electron.+No+account.;YAML+collections+%E2%80%94+git-friendly+by+design.;Hexagonal+Rust.+IO-free+core.+54+tests+green." alt="typing SVG" />
+  <img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=600&size=18&duration=3500&pause=1200&color=58A6FF&center=true&vCenter=true&width=620&lines=Postman+in+your+terminal.;Vim+keys.+No+Electron.+No+account.;YAML+collections+%E2%80%94+git-friendly+by+design.;Hexagonal+Rust.+IO-free+core.+112+tests+green." alt="typing SVG" />
 </a>
 
 **A terminal-first HTTP client. Sibling to `lazygit` and `lazydocker`.**
@@ -15,10 +15,10 @@ Send requests, manage collections + envs, vim-navigate the JSON response, import
   <img alt="reqwest" src="https://img.shields.io/badge/HTTP-reqwest%20%2B%20rustls-009688?style=flat-square" />
   <img alt="tokio" src="https://img.shields.io/badge/async-tokio-369?style=flat-square&logo=tokio" />
   <img alt="license" src="https://img.shields.io/badge/license-MIT-yellow?style=flat-square" />
-  <img alt="status" src="https://img.shields.io/badge/status-v0.1%20alpha-FF5D01?style=flat-square" />
+  <a href="https://crates.io/crates/lazyfetch"><img alt="crates.io" src="https://img.shields.io/crates/v/lazyfetch?style=flat-square&color=FF5D01" /></a>
 </p>
 
-| 🦀 7 crates | ✅ 54 tests | 🧪 IO-free core | 🔐 secret redaction | 🖱️ mouse + vim |
+| 🦀 7 crates | ✅ 112 tests | 🧪 IO-free core | 🔐 secret redaction | 🖱️ mouse + vim |
 |:---:|:---:|:---:|:---:|:---:|
 | Hexagonal workspace | wiremock + insta + proptest | `cargo deny` + grep guard | unified across log / save / history / yank | clicks + `hjkl` + `vy` |
 
